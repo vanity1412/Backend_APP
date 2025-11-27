@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UTE Tea API - Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 50px;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 1.2em;
+            margin-bottom: 40px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 40px;
+        }
+        .btn {
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #e0e0e0;
+            transform: translateY(-3px);
+        }
+        .info-box {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin-top: 30px;
+            text-align: left;
+        }
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        .info-box ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .info-box li {
+            padding: 8px 0;
+            color: #555;
+        }
+        .info-box li:before {
+            content: "✓ ";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .endpoints {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .endpoint {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .endpoint strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .endpoint code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍵 UTE Tea API</h1>
+        <p class="subtitle">Milk Tea Ordering Application - Backend API</p>
+        
+        <div class="btn-group">
+            <a href="/swagger-ui.html" class="btn btn-primary">📚 Swagger UI</a>
+            <a href="/v3/api-docs" class="btn btn-secondary">📄 OpenAPI JSON</a>
+        </div>
+        
+        <div class="info-box">
+            <h3>🚀 Quick Start</h3>
+            <ul>
+                <li>Click <strong>Swagger UI</strong> để xem và test API</li>
+                <li>Login tại <code>/api/auth/login</code> để lấy JWT token</li>
+                <li>Click nút <strong>Authorize</strong> trong Swagger, nhập token</li>
+                <li>Test các API endpoints với authentication</li>
+            </ul>
+        </div>
+        
+        <div class="info-box">
+            <h3>👥 Test Accounts</h3>
+            <div class="endpoints">
+                <div class="endpoint">
+                    <strong>Manager</strong>
+                    <code>manager_ute / 123456</code>
+                </div>
+                <div class="endpoint">
+                    <strong>User</strong>
+                    <code>ute_student_01 / 123456</code>
+                </div>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <h3>📡 Main Endpoints</h3>
+            <div class="endpoints">
+                <div class="endpoint">
+                    <strong>Auth</strong>
+                    <code>/api/auth/**</code>
+                </div>
+                <div class="endpoint">
+                    <strong>Drinks</strong>
+                    <code>/api/drinks/**</code>
+                </div>
+                <div class="endpoint">
+                    <strong>Orders</strong>
+                    <code>/api/orders/**</code>
+                </div>
+                <div class="endpoint">
+                    <strong>Manager</strong>
+                    <code>/api/manager/**</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
