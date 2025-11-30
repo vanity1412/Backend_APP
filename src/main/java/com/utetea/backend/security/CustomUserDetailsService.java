@@ -14,19 +14,19 @@ import java.util.Collections;
 @Service
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
-    
+
     private final UserRepository userRepository;
-    
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userRepository.findByUsername(username)
                 .or(() -> userRepository.findByPhone(username))
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
-        
+
         if (!user.getActive()) {
             throw new UsernameNotFoundException("User is inactive: " + username);
         }
-        
+
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPassword())

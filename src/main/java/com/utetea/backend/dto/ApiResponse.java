@@ -1,12 +1,18 @@
 package com.utetea.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiResponse<T> {
     private boolean success;
     private String message;
     private T data;
+
     
     public static <T> ApiResponse<T> success(T data) {
         return new ApiResponse<>(true, "Success", data);

@@ -11,12 +11,14 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 @Tag(name = "🔐 Authentication", description = "Đăng ký, đăng nhập, JWT token")
+@Slf4j
 public class AuthController {
     
     private final AuthService authService;
@@ -30,8 +32,61 @@ public class AuthController {
     @PostMapping("/register")
     @Operation(summary = "Đăng ký tài khoản", description = "Tạo tài khoản USER mới với username, phone, password")
     public ResponseEntity<ApiResponse<LoginResponse>> register(@Valid @RequestBody RegisterRequest request) {
+
         LoginResponse response = authService.register(request);
         return ResponseEntity.ok(ApiResponse.success("Registration successful", response));
+    }
+
+    @PostMapping("/register-with-otp")
+    @Operation(summary = "Đăng ký với OTP", description = "Bước 1: Đăng ký và gửi OTP qua email")
+    public ResponseEntity<ApiResponse<String>> registerWithOtp(@Valid @RequestBody RegisterRequest request) {
+        log.info("========== CONTROLLER START: /register-with-otp ==========");
+        log.info("Request info - Username: {}, Email: {}", request.getUsername(), request.getEmail());
+
+        // 1. Gọi Service
+        authService.registerWithOtp(request);
+
+        log.info("Service completed successfully. Returning response...");
+
+        // 2. Trả về Response
+        // Sử dụng hàm static 'success' có sẵn trong ApiResponse của bạn
+        // Tham số 1: Message (Thông báo)
+        // Tham số 2: Data (Dữ liệu kèm theo - ở đây là String hướng dẫn)
+        return ResponseEntity.ok(ApiResponse.success(
+                "OTP đã được gửi thành công!",
+                "Vui lòng kiểm tra email: " + request.getEmail()
+        ));
+    }
+
+    @PostMapping("/otp-verify")
+    @Operation(summary = "Xác thực OTP", description = "Bước 2: Xác thực OTP và kích hoạt tài khoản (Không trả về Token)")
+    public ResponseEntity<ApiResponse<String>> verifyOtp(@Valid @RequestBody com.utetea.backend.dto.OtpRequest request) {
+        log.info("========== CONTROLLER START: /otp-verify ==========");
+
+        // Gọi service (giờ service chỉ trả về void)
+        if (request.getEmail() != null && !request.getEmail().isEmpty()) {
+            authService.verifyOtpAndActivateByEmail(request.getEmail(), request.getOtp());
+        }
+        else if (request.getPhone() != null && !request.getPhone().isEmpty()) {
+            authService.verifyOtpAndActivate(request.getPhone(), request.getOtp());
+        }
+        else {
+            throw new com.utetea.backend.exception.BusinessException("Email or Phone is required");
+        }
+
+        // Trả về thông báo thành công dạng String
+        // Android nhận được cái này sẽ Toast lên và chuyển về màn hình Login
+        return ResponseEntity.ok(ApiResponse.success(
+                "Kích hoạt tài khoản thành công!",
+                "Vui lòng đăng nhập để tiếp tục."
+        ));
+    }
+
+    @PostMapping("/resend-otp")
+    @Operation(summary = "Gửi lại OTP", description = "Gửi lại mã OTP nếu hết hạn")
+    public ResponseEntity<ApiResponse<String>> resendOtp(@RequestParam(name = "target") String phoneOrEmail) {
+        authService.resendOtp(phoneOrEmail);
+        return ResponseEntity.ok(ApiResponse.success("OTP resent successfully"));
     }
     
     @PostMapping("/login")

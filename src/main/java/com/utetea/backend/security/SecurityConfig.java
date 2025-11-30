@@ -51,7 +51,7 @@ public class SecurityConfig {
                         // Root and static resources
                         .requestMatchers("/", "/index.html", "/error").permitAll()
                         
-                        // Public endpoints
+                        // Public endpoints (Auth - including OTP)
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/drinks/**").permitAll()
                         .requestMatchers("/api/stores/**").permitAll()

@@ -20,10 +20,12 @@ spring.datasource.hikari.minimum-idle=1
 spring.mail.host=smtp.gmail.com
 spring.mail.port=587
 spring.mail.username=watershoputetea@gmail.com
-spring.mail.password=ibdj gggy drtt eqxg
+spring.mail.password=ibdjgggydrtteqxg
 spring.mail.properties.mail.smtp.auth=true
 spring.mail.properties.mail.smtp.starttls.enable=true
-spring.mail.properties.mail.debug=false
+spring.mail.properties.mail.connectiontimeout=5000
+spring.mail.properties.mail.timeout=5000
+spring.mail.properties.mail.writetimeout=5000
 
 # Server Configuration
 server.port=8080
