@@ -1,5 +1,7 @@
 package com.utetea.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.utetea.backend.model.MemberTier;
 import com.utetea.backend.model.UserRole;
 import lombok.*;
@@ -11,7 +13,12 @@ public class LoginResponse {
     private String phone;
     private String fullName;
     private String address;
+    
+    @JsonProperty("role")
     private UserRole role;
+    
+    @JsonProperty("memberTier")
     private MemberTier memberTier;
+    
     private String token;
 }

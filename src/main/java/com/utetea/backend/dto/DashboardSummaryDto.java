@@ -3,16 +3,21 @@ package com.utetea.backend.dto;
 import lombok.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.Map;
+import java.util.List;
 
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor
 public class DashboardSummaryDto {
-    private Map<String, Long> ordersByStatus;
     private BigDecimal totalRevenue;
-    private BigDecimal todayRevenue;
     private Long totalOrders;
-    private Long todayOrders;
-    private LocalDateTime startDate;
-    private LocalDateTime endDate;
+    private Long pendingOrders;
+    private Long completedOrders;
+    private Long canceledOrders;
+    private List<TopSellingDrinkDto> topSellingDrinks;
+    
+    @Getter @Setter @NoArgsConstructor @AllArgsConstructor
+    public static class TopSellingDrinkDto {
+        private String drinkName;
+        private Long totalSold;
+        private BigDecimal revenue;
+    }
 }

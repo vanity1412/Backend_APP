@@ -2,9 +2,6 @@ package com.utetea.backend.service;
 
 import com.utetea.backend.dto.DashboardSummaryDto;
 import com.utetea.backend.dto.OrderDto;
-import com.utetea.backend.exception.BusinessException;
-import com.utetea.backend.exception.ResourceNotFoundException;
-import com.utetea.backend.model.Order;
 import com.utetea.backend.model.OrderStatus;
 import com.utetea.backend.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,8 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -28,73 +25,56 @@ public class ManagerService {
     private final OrderService orderService;
     
     @Transactional(readOnly = true)
-    public DashboardSummaryDto getDashboardSummary(LocalDateTime startDate, LocalDateTime endDate) {
-        if (startDate == null) {
-            startDate = LocalDateTime.now().minusDays(30);
+    public DashboardSummaryDto getDashboardSummary() {
+        log.info("Getting dashboard summary");
+        
+        try {
+            // Count orders by status (all time)
+            Long pendingOrders = orderRepository.countByStatus(OrderStatus.PENDING);
+            Long completedOrders = orderRepository.countByStatus(OrderStatus.DONE);
+            Long canceledOrders = orderRepository.countByStatus(OrderStatus.CANCELED);
+            Long totalOrders = orderRepository.count();
+            
+            // Calculate total revenue (simple sum of all DONE orders)
+            BigDecimal totalRevenue = BigDecimal.ZERO;
+            // TODO: Implement revenue calculation when needed
+            
+            // Get top selling drinks (TODO: implement later)
+            List<DashboardSummaryDto.TopSellingDrinkDto> topSellingDrinks = new ArrayList<>();
+            
+            DashboardSummaryDto summary = new DashboardSummaryDto();
+            summary.setTotalRevenue(totalRevenue);
+            summary.setTotalOrders(totalOrders != null ? totalOrders : 0L);
+            summary.setPendingOrders(pendingOrders != null ? pendingOrders : 0L);
+            summary.setCompletedOrders(completedOrders != null ? completedOrders : 0L);
+            summary.setCanceledOrders(canceledOrders != null ? canceledOrders : 0L);
+            summary.setTopSellingDrinks(topSellingDrinks);
+            
+            log.info("Dashboard summary: revenue={}, total={}, pending={}", 
+                totalRevenue, totalOrders, pendingOrders);
+            
+            return summary;
+        } catch (Exception e) {
+            log.error("Error getting dashboard summary", e);
+            throw e;
         }
-        if (endDate == null) {
-            endDate = LocalDateTime.now();
-        }
-        
-        // Count orders by status
-        Map<String, Long> ordersByStatus = new HashMap<>();
-        ordersByStatus.put("PENDING", orderRepository.countByStatus(OrderStatus.PENDING));
-        ordersByStatus.put("MAKING", orderRepository.countByStatus(OrderStatus.MAKING));
-        ordersByStatus.put("SHIPPING", orderRepository.countByStatus(OrderStatus.SHIPPING));
-        ordersByStatus.put("DONE", orderRepository.countByStatus(OrderStatus.DONE));
-        ordersByStatus.put("CANCELED", orderRepository.countByStatus(OrderStatus.CANCELED));
-        
-        // Calculate revenue
-        BigDecimal totalRevenue = orderRepository.calculateTotalRevenue(
-                OrderStatus.DONE, startDate, endDate);
-        
-        BigDecimal todayRevenue = orderRepository.calculateTotalRevenue(
-                OrderStatus.DONE, 
-                LocalDateTime.now().toLocalDate().atStartOfDay(),
-                LocalDateTime.now());
-        
-        Long totalOrders = orderRepository.countByCreatedAtBetween(startDate, endDate);
-        Long todayOrders = orderRepository.countByCreatedAtBetween(
-                LocalDateTime.now().toLocalDate().atStartOfDay(),
-                LocalDateTime.now());
-        
-        return DashboardSummaryDto.builder()
-                .ordersByStatus(ordersByStatus)
-                .totalRevenue(totalRevenue != null ? totalRevenue : BigDecimal.ZERO)
-                .todayRevenue(todayRevenue != null ? todayRevenue : BigDecimal.ZERO)
-                .totalOrders(totalOrders)
-                .todayOrders(todayOrders)
-                .startDate(startDate)
-                .endDate(endDate)
-                .build();
     }
     
     @Transactional(readOnly = true)
-    public Page<OrderDto> getAllOrders(OrderStatus status, LocalDateTime startDate, 
-                                       LocalDateTime endDate, Pageable pageable) {
-        Page<Order> orders;
+    public Page<OrderDto> getOrdersByStatus(OrderStatus status, Pageable pageable) {
+        log.info("Getting orders with status: {}", status);
         
-        if (status != null && startDate != null && endDate != null) {
-            orders = orderRepository.findByStatusAndCreatedAtBetween(status, startDate, endDate, pageable);
-        } else if (status != null) {
-            orders = orderRepository.findByStatus(status, pageable);
-        } else if (startDate != null && endDate != null) {
-            orders = orderRepository.findByCreatedAtBetween(startDate, endDate, pageable);
-        } else {
-            orders = orderRepository.findAllByOrderByCreatedAtDesc(pageable);
+        if (status == null) {
+            return orderService.getAllOrders(pageable);
         }
         
-        return orders.map(order -> orderService.getOrderById(order.getId()));
-    }
-    
-    @Transactional(readOnly = true)
-    public OrderDto getOrderDetail(Long id) {
-        return orderService.getOrderById(id);
+        return orderRepository.findByStatusOrderByCreatedAtDesc(status, pageable)
+            .map(order -> orderService.getOrderById(order.getId()));
     }
     
     @Transactional
-    public OrderDto updateOrderStatus(Long id, OrderStatus newStatus) {
-        log.info("Manager updating order {} status to {}", id, newStatus);
-        return orderService.updateOrderStatus(id, newStatus);
+    public OrderDto updateOrderStatus(Long orderId, OrderStatus newStatus) {
+        log.info("Manager updating order {} to status {}", orderId, newStatus);
+        return orderService.updateOrderStatus(orderId, newStatus);
     }
 }

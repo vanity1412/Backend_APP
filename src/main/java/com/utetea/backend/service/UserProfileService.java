@@ -28,7 +28,7 @@ public class UserProfileService {
     public UserProfileDto updateProfile(String username, UpdateProfileRequest request) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
-
+        
         // Check if phone is being changed and already exists
         if (request.getPhone() != null && !request.getPhone().equals(user.getPhone())) {
             if (userRepository.existsByPhone(request.getPhone())) {
@@ -43,14 +43,6 @@ public class UserProfileService {
         
         if (request.getAddress() != null) {
             user.setAddress(request.getAddress());
-        }
-
-        // Check if email is being changed and already exists
-        if (request.getEmail() != null && !request.getEmail().equals(user.getEmail())) {
-            if (userRepository.existsByPhone(request.getEmail())) {
-                throw new BusinessException("Phone number already exists");
-            }
-            user.setEmail(request.getEmail());
         }
         
         user = userRepository.save(user);
@@ -68,7 +60,6 @@ public class UserProfileService {
                 .memberTier(user.getMemberTier())
                 .points(user.getPoints())
                 .active(user.getActive())
-                .email(user.getEmail())
                 .build();
     }
 }

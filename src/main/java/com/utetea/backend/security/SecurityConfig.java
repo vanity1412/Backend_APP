@@ -59,6 +59,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/promotions/**").permitAll()
                         .requestMatchers("/assets/**").permitAll()
                         
+                        // Manager test endpoint (for debugging)
+                        .requestMatchers("/api/manager/test").permitAll()
+                        
                         // Manager only endpoints
                         .requestMatchers("/api/manager/**").hasRole("MANAGER")
                         .requestMatchers("/api/admin/**").hasRole("MANAGER")

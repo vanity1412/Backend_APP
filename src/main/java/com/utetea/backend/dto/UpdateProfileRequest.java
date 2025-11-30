@@ -15,8 +15,4 @@ public class UpdateProfileRequest {
     
     @Size(max = 255, message = "Address must not exceed 255 characters")
     private String address;
-
-    @Size(max = 255, message = "Email must not exceed 255 characters")
-    private String email;
-
 }

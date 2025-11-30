@@ -9,7 +9,6 @@ public class UserProfileDto {
     private Long id;
     private String username;
     private String phone;
-    private String email;
     private String fullName;
     private String address;
     private UserRole role;

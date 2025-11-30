@@ -64,6 +64,9 @@ public class AuthService {
     
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
+        System.out.println("========== LOGIN SERVICE START ==========");
+        System.out.println("Login attempt for: " + request.getUsernameOrPhone());
+        
         // Authenticate with Spring Security
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
@@ -77,6 +80,11 @@ public class AuthService {
             request.getUsernameOrPhone()
         ).orElseThrow(() -> new BusinessException("Invalid credentials"));
         
+        System.out.println("User found - ID: " + user.getId());
+        System.out.println("User found - Username: " + user.getUsername());
+        System.out.println("User found - Role: " + user.getRole());
+        System.out.println("User found - Role.name(): " + user.getRole().name());
+        
         if (user.getIsBlocked()) {
             throw new BusinessException("Account is blocked");
         }
@@ -88,7 +96,11 @@ public class AuthService {
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
         String token = jwtUtil.generateToken(userDetails, user.getRole().name());
         
-        return mapToLoginResponse(user, token);
+        LoginResponse response = mapToLoginResponse(user, token);
+        System.out.println("Response created - Role: " + response.getRole());
+        System.out.println("========== LOGIN SERVICE END ==========");
+        
+        return response;
     }
 
     @Transactional
@@ -243,6 +255,14 @@ public class AuthService {
         response.setRole(user.getRole());
         response.setMemberTier(user.getMemberTier());
         response.setToken(token);
+        
+        System.out.println("========== MAP TO LOGIN RESPONSE ==========");
+        System.out.println("User Role (enum): " + user.getRole());
+        System.out.println("User Role (name): " + user.getRole().name());
+        System.out.println("Response Role: " + response.getRole());
+        System.out.println("Response Role (name): " + response.getRole().name());
+        System.out.println("==========================================");
+        
         return response;
     }
 }
