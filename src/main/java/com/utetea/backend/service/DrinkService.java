@@ -98,6 +98,12 @@ public class DrinkService {
         dto.setBasePrice(drink.getBasePrice());
         dto.setIsActive(drink.getIsActive());
         
+        // ✅ FIX VẤN ĐỀ 2: Map categoryId và categoryName từ Drink entity
+        if (drink.getCategory() != null) {
+            dto.setCategoryId(drink.getCategory().getId());
+            dto.setCategoryName(drink.getCategory().getName());
+        }
+        
         List<DrinkSizeDto> sizes = drinkSizeRepository.findByDrinkId(drink.getId()).stream()
             .map(this::mapSizeToDto)
             .collect(Collectors.toList());
