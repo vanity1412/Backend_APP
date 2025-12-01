@@ -1,14 +1,536 @@
-# 🍵 UTE TEA BACKEND API
+# 🍵 UTE TEA - Backend API
 
-> Backend API cho ứng dụng đặt trà sữa UTE Tea - Đồ án Lập trình Di động
+<div align="center">
 
-[![Java](https://img.shields.io/badge/Java-17-orange.svg)](https://www.oracle.com/java/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.7-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![MySQL](https://img.shields.io/badge/MySQL-8.0-blue.svg)](https://www.mysql.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Java](https://img.shields.io/badge/Java-17-orange?style=for-the-badge&logo=openjdk)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.7-brightgreen?style=for-the-badge&logo=spring)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-blue?style=for-the-badge&logo=mysql)
+![JWT](https://img.shields.io/badge/JWT-Auth-black?style=for-the-badge&logo=jsonwebtokens)
+
+**Backend API cho ứng dụng đặt trà sữa UTE Tea**
+
+[Tính năng](#-tính-năng) • [Cài đặt](#️-cài-đặt-nhanh) • [API Docs](#-api-endpoints) • [Luồng hoạt động](#-luồng-hoạt-động-hệ-thống)
+
+</div>
 
 ---
-## 🧪 Testing
+
+## 📖 Giới thiệu
+
+**UTE Tea Backend** là REST API server được xây dựng bằng Spring Boot, phục vụ cho ứng dụng đặt trà sữa trực tuyến dành cho sinh viên và cộng đồng UTE.
+
+### 🎯 Điểm nổi bật
+
+- 🔐 **Bảo mật cao** - JWT Authentication + BCrypt password hashing
+- 🚀 **Hiệu năng tốt** - Spring Boot 3.5.7 + JPA/Hibernate optimization
+- 📱 **Mobile-friendly** - RESTful API chuẩn cho Android/iOS
+- 📊 **Dashboard quản lý** - Thống kê doanh thu, đơn hàng real-time
+- 🎟️ **Hệ thống khuyến mãi** - Mã giảm giá linh hoạt (%, fixed amount)
+- 🗄️ **Database cloud** - MySQL trên Aiven Cloud (99.9% uptime)
+
+---
+
+## 🚀 Tính năng
+
+### 👤 Dành cho Khách hàng
+
+✅ Đăng ký/Đăng nhập tài khoản  
+✅ Xem menu 16+ món nước (4 categories)  
+✅ Tìm kiếm món theo tên  
+✅ Chọn size (M, L, Jumbo) và topping  
+✅ Đặt hàng online (Delivery/Pickup)  
+✅ Áp dụng mã giảm giá  
+✅ Theo dõi trạng thái đơn hàng  
+✅ Xem lịch sử đơn hàng  
+
+### 👨‍💼 Dành cho Quản lý
+
+✅ Dashboard thống kê tổng quan  
+✅ Quản lý đơn hàng (xem, cập nhật trạng thái)  
+✅ Quản lý menu (thêm/sửa/xóa món)  
+✅ Quản lý danh mục  
+✅ Báo cáo doanh thu theo ngày/tháng  
+✅ Xem top món bán chạy  
+
+---
+
+## ⚙️ Cài đặt nhanh
+
+### Yêu cầu hệ thống
+
+- ☕ Java JDK 17 trở lên
+- 📦 Maven 3.6+ (hoặc dùng Maven Wrapper có sẵn)
+- 🗄️ MySQL 8.0+ (tùy chọn - đã có cloud database)
+
+### Bước 1: Clone project
+
+```bash
+git clone <repository-url>
+cd backend_utetea
+```
+
+### Bước 2: Chạy server
+
+```bash
+# Windows
+.\mvnw.cmd spring-boot:run
+
+# Mac/Linux
+./mvnw spring-boot:run
+```
+
+### Bước 3: Kiểm tra
+
+Server chạy tại: **http://localhost:8080**
+
+Test API:
+```bash
+curl http://localhost:8080/api/auth/health
+```
+
+Kết quả mong đợi:
+```json
+{
+  "success": true,
+  "message": "API is running",
+  "data": "OK"
+}
+```
+
+✅ **Xong!** API đã sẵn sàng sử dụng.
+
+> **Lưu ý:** Database cloud đã được cấu hình sẵn trong `application.properties`, không cần setup thêm!
+
+---
+
+## 📡 API Endpoints
+
+### 🔓 Public (Không cần authentication)
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/api/auth/register` | Đăng ký tài khoản |
+| `POST` | `/api/auth/login` | Đăng nhập |
+| `GET` | `/api/drinks` | Lấy danh sách món |
+| `GET` | `/api/drinks/{id}` | Chi tiết món |
+| `GET` | `/api/categories` | Lấy danh mục |
+| `GET` | `/api/stores` | Lấy cửa hàng |
+| `GET` | `/api/promotions` | Lấy mã giảm giá |
+
+### 🔐 User (Cần JWT token)
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/api/orders` | Tạo đơn hàng |
+| `GET` | `/api/orders/user/{userId}` | Lịch sử đơn |
+| `GET` | `/api/orders/{orderId}` | Chi tiết đơn |
+
+### 👨‍💼 Manager (Chỉ MANAGER role)
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/api/manager/summary` | Dashboard thống kê |
+| `GET` | `/api/manager/orders` | Xem tất cả đơn |
+| `PUT` | `/api/manager/orders/{id}/status` | Cập nhật trạng thái |
+| `POST` | `/api/admin/drinks` | Thêm món mới |
+| `PUT` | `/api/admin/drinks/{id}` | Sửa món |
+| `DELETE` | `/api/admin/drinks/{id}` | Xóa món |
+
+### 📚 API Documentation
+
+- **Swagger UI:** http://localhost:8080/swagger-ui.html
+- **OpenAPI JSON:** http://localhost:8080/v3/api-docs
+
+---
+
+## 🔄 Luồng hoạt động hệ thống
+
+### 1️⃣ Authentication Flow
+
+```
+┌─────────────┐                                    ┌──────────────┐
+│ Android App │                                    │ Backend API  │
+└──────┬──────┘                                    └──────┬───────┘
+       │                                                  │
+       │  POST /api/auth/register                        │
+       │  { username, password, fullName, phone }        │
+       ├────────────────────────────────────────────────>│
+       │                                                  │
+       │                                                  │  Validate input
+       │                                                  │  Hash password (BCrypt)
+       │                                                  │  Save to database
+       │                                                  │
+       │  { success: true, message: "Registered" }       │
+       │<────────────────────────────────────────────────┤
+       │                                                  │
+       │  POST /api/auth/login                           │
+       │  { usernameOrPhone, password }                  │
+       ├────────────────────────────────────────────────>│
+       │                                                  │
+       │                                                  │  Find user
+       │                                                  │  Verify password
+       │                                                  │  Generate JWT token
+       │                                                  │
+       │  { token, userId, username, role }              │
+       │<────────────────────────────────────────────────┤
+       │                                                  │
+       │  GET /api/orders                                │
+       │  Header: Authorization: Bearer <token>          │
+       ├────────────────────────────────────────────────>│
+       │                                                  │
+       │                                                  │  Validate JWT
+       │                                                  │  Extract userId
+       │                                                  │  Query database
+       │                                                  │
+       │  { orders: [...] }                              │
+       │<────────────────────────────────────────────────┤
+       │                                                  │
+```
+
+**Chi tiết:**
+1. **Register:** Validate → Hash password (BCrypt) → Save DB → Return success
+2. **Login:** Validate credentials → Generate JWT (24h) → Return token + user info
+3. **Protected API:** Validate JWT → Extract user → Process request
+
+---
+
+### 2️⃣ Order Creation Flow
+
+```
+┌──────────┐     ┌────────────┐     ┌──────────┐     ┌──────────┐
+│  Client  │     │ Controller │     │  Service │     │ Database │
+└────┬─────┘     └─────┬──────┘     └────┬─────┘     └────┬─────┘
+     │                 │                  │                │
+     │ POST /api/orders│                  │                │
+     ├────────────────>│                  │                │
+     │                 │ createOrder()    │                │
+     │                 ├─────────────────>│                │
+     │                 │                  │ Validate user  │
+     │                 │                  ├───────────────>│
+     │                 │                  │<───────────────┤
+     │                 │                  │ Validate store │
+     │                 │                  ├───────────────>│
+     │                 │                  │<───────────────┤
+     │                 │                  │ Get drink info │
+     │                 │                  ├───────────────>│
+     │                 │                  │<───────────────┤
+     │                 │                  │                │
+     │                 │                  │ Calculate price│
+     │                 │                  │ Apply promotion│
+     │                 │                  │                │
+     │                 │                  │ Save order     │
+     │                 │                  ├───────────────>│
+     │                 │                  │ Save items     │
+     │                 │                  ├───────────────>│
+     │                 │                  │<───────────────┤
+     │                 │ OrderDto         │                │
+     │                 │<─────────────────┤                │
+     │ Success + Order │                  │                │
+     │<────────────────┤                  │                │
+     │                 │                  │                │
+```
+
+**Tính toán giá:**
+
+```java
+// Giá 1 món
+itemPrice = (basePrice + sizeExtraPrice + sum(toppingPrices)) × quantity
+
+// Tổng đơn hàng
+subtotal = sum(itemPrice)
+
+// Áp dụng giảm giá
+if (promotionCode valid) {
+    if (type == PERCENTAGE) {
+        discount = subtotal × (value / 100)
+        if (discount > maxDiscount) discount = maxDiscount
+    } else {
+        discount = value
+    }
+}
+
+// Giá cuối cùng
+finalPrice = subtotal - discount + shippingFee
+```
+
+---
+
+### 3️⃣ Order Status Lifecycle
+
+```
+                    ┌─────────┐
+                    │ PENDING │ ◄── Đơn hàng mới tạo
+                    └────┬────┘
+                         │
+            ┌────────────┼────────────┐
+            │                         │
+            ▼                         ▼
+      ┌──────────┐              ┌──────────┐
+      │  MAKING  │              │ CANCELED │ ◄── Hủy đơn
+      └────┬─────┘              └──────────┘
+           │
+    ┌──────┴──────┐
+    │             │
+    ▼             ▼
+┌──────────┐  ┌────────┐
+│ SHIPPING │  │ READY  │ ◄── Sẵn sàng lấy (Pickup)
+└────┬─────┘  └───┬────┘
+     │            │
+     │            │
+     ▼            ▼
+   ┌────────────────┐
+   │      DONE      │ ◄── Hoàn thành
+   └────────────────┘
+```
+
+**Mô tả trạng thái:**
+
+| Status | Mô tả | Có thể chuyển sang |
+|--------|-------|-------------------|
+| `PENDING` | Chờ xác nhận | MAKING, CANCELED |
+| `MAKING` | Đang pha chế | SHIPPING, READY, CANCELED |
+| `SHIPPING` | Đang giao hàng (Delivery) | DONE, CANCELED |
+| `READY` | Sẵn sàng lấy (Pickup) | DONE, CANCELED |
+| `DONE` | Hoàn thành | - |
+| `CANCELED` | Đã hủy | - |
+
+---
+
+### 4️⃣ Promotion Validation Flow
+
+```
+                    ┌──────────────────┐
+                    │ Apply Promo Code │
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │ Code exists?     │
+                    └────┬────────┬────┘
+                         │ No     │ Yes
+                         ▼        ▼
+                   ┌─────────┐  ┌──────────┐
+                   │ Invalid │  │ Active?  │
+                   └─────────┘  └────┬─────┘
+                                     │ Yes
+                                     ▼
+                              ┌──────────────┐
+                              │ Check dates  │
+                              └──────┬───────┘
+                                     │ Valid
+                                     ▼
+                              ┌──────────────┐
+                              │ Min order?   │
+                              └──────┬───────┘
+                                     │ OK
+                                     ▼
+                              ┌──────────────┐
+                              │ Usage limit? │
+                              └──────┬───────┘
+                                     │ OK
+                                     ▼
+                              ┌──────────────┐
+                              │ Apply Discount│
+                              └──────────────┘
+```
+
+**Validation Rules:**
+
+```java
+// Kiểm tra mã giảm giá
+if (!promotion.isActive) 
+    return "Mã không còn hiệu lực";
+    
+if (today < promotion.startDate) 
+    return "Mã chưa bắt đầu";
+    
+if (today > promotion.endDate) 
+    return "Mã đã hết hạn";
+    
+if (orderTotal < promotion.minOrderAmount) 
+    return "Đơn hàng chưa đủ điều kiện";
+    
+if (promotion.usageCount >= promotion.maxUsage) 
+    return "Mã đã hết lượt sử dụng";
+
+// Áp dụng giảm giá
+if (promotion.type == PERCENTAGE) {
+    discount = orderTotal × (promotion.value / 100);
+    if (discount > promotion.maxDiscount) {
+        discount = promotion.maxDiscount;
+    }
+} else {
+    discount = promotion.value;
+}
+```
+
+---
+
+## 💾 Cấu trúc Database
+
+### Entity Relationship Diagram
+
+```
+┌──────────────┐
+│    users     │
+│──────────────│
+│ id (PK)      │
+│ username     │
+│ password     │
+│ role         │
+│ memberTier   │
+└──────┬───────┘
+       │ 1
+       │
+       │ N
+┌──────▼───────┐      N ┌──────────────┐
+│   orders     │◄───────┤  promotions  │
+│──────────────│        │──────────────│
+│ id (PK)      │        │ code         │
+│ userId (FK)  │        │ type         │
+│ storeId (FK) │        │ value        │
+│ status       │        └──────────────┘
+│ totalPrice   │
+└──────┬───────┘
+       │ 1
+       │
+       │ N
+┌──────▼───────┐
+│ order_items  │
+│──────────────│
+│ id (PK)      │
+│ orderId (FK) │
+│ drinkId (FK) │
+│ quantity     │
+└──────┬───────┘
+       │ 1
+       │
+       │ N
+┌──────▼────────────┐
+│ order_item_       │
+│   toppings        │
+│───────────────────│
+│ orderItemId (FK)  │
+│ toppingName       │
+└───────────────────┘
+
+┌──────────────────┐
+│ drink_categories │
+│──────────────────│
+│ id (PK)          │
+│ name             │
+└────────┬─────────┘
+         │ 1
+         │
+         │ N
+    ┌────▼─────┐
+    │  drinks  │
+    │──────────│
+    │ id (PK)  │
+    │ name     │
+    │ price    │
+    └────┬─────┘
+         │ 1
+    ┌────┴─────┬────────────┐
+    │ N        │ N          │
+┌───▼──────┐ ┌─▼──────────┐│
+│drink_    │ │drink_      ││
+│sizes     │ │toppings    ││
+└──────────┘ └────────────┘│
+```
+
+### Dữ liệu mẫu
+
+#### 🔑 Tài khoản test
+
+| Username | Password | Role | Member Tier |
+|----------|----------|------|-------------|
+| `manager_ute` | `123456` | MANAGER | - |
+| `ute_student_01` | `123456` | USER | BRONZE |
+| `ute_student_02` | `123456` | USER | SILVER |
+| `ute_student_03` | `123456` | USER | GOLD |
+
+#### 🥤 Categories & Drinks
+
+| Category | Số món | Ví dụ |
+|----------|--------|-------|
+| **Milk Tea** | 4 | Trà sữa Houjicha Classic, Trà sữa Oolong |
+| **Fruit Tea** | 5 | Đào hồng UTE, Trà vải nhai tươi |
+| **Macchiato** | 3 | Trà kem cheese, Macchiato caramel |
+| **Special** | 4 | Aiyu jelly, Trà long nhãn |
+
+#### 🎟️ Mã giảm giá
+
+| Code | Loại | Giá trị | Đơn tối thiểu |
+|------|------|---------|---------------|
+| `STUDENT20` | Percentage | 20% | 50,000đ |
+| `FREESHIPUTE` | Fixed | 15,000đ | 60,000đ |
+| `COMBO4UTE` | Fixed | 30,000đ | 120,000đ |
+
+---
+
+## 🧪 Testing & Examples
+
+### Test với cURL
+
+#### 1. Health Check
+```bash
+curl http://localhost:8080/api/auth/health
+```
+
+#### 2. Login
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "usernameOrPhone": "ute_student_01",
+    "password": "123456"
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "id": 2,
+    "username": "ute_student_01",
+    "fullName": "Nguyen Thi A",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+#### 3. Get Menu
+```bash
+curl http://localhost:8080/api/drinks
+```
+
+#### 4. Create Order (với JWT)
+```bash
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "userId": 2,
+    "storeId": 1,
+    "type": "DELIVERY",
+    "address": "KTX khu A, UTE",
+    "paymentMethod": "COD",
+    "promotionCode": "STUDENT20",
+    "items": [
+      {
+        "drinkId": 1,
+        "sizeName": "L",
+        "quantity": 2,
+        "note": "Ít đường",
+        "toppings": [
+          { "toppingName": "Trân châu đen" }
+        ]
+      }
+    ]
+  }'
+```
 
 ### Test với Swagger UI
 
@@ -17,67 +539,11 @@
 3. Click **Authorize**, nhập: `Bearer <token>`
 4. Test các endpoints
 
-## 📋 Mục lục
-
-1. [Giới thiệu](#-giới-thiệu)
-2. [Công nghệ sử dụng](#-công-nghệ-sử-dụng)
-3. [Kiến trúc Project](#-kiến-trúc-project)
-4. [Cấu trúc Database](#-cấu-trúc-database)
-5. [Cài đặt & Chạy](#-cài-đặt--chạy)
-6. [API Endpoints](#-api-endpoints)
-7. [Tính năng](#-tính-năng)
-8. [Tài liệu](#-tài-liệu)
-9. [Team](#-team)
-
----
-
-## 🎯 Giới thiệu
-
-**UTE Tea Backend** là REST API server cho ứng dụng đặt trà sữa trực tuyến, phục vụ sinh viên và cộng đồng UTE. Hệ thống hỗ trợ:
-
-- 🔐 Xác thực người dùng với JWT
-- 🥤 Quản lý menu 16+ món nước với 4 categories
-- 🛒 Đặt hàng online (Delivery/Pickup)
-- 🎟️ Hệ thống mã giảm giá
-- 👨‍💼 Dashboard quản lý cho Manager
-- 📊 Thống kê doanh thu và đơn hàng
-
----
-
-## 🚀 Công nghệ sử dụng
-
-### Backend Framework
-- **Java 17** - Programming language
-- **Spring Boot 3.5.7** - Application framework
-- **Spring Security** - Authentication & Authorization
-- **Spring Data JPA** - Database ORM
-- **Hibernate** - JPA implementation
-
-### Database
-- **MySQL 8.0** - Relational database
-- **Aiven Cloud MySQL** - Cloud database (production)
-
-### Security & Authentication
-- **JWT (JSON Web Token)** - Stateless authentication
-- **BCrypt** - Password hashing
-
-### Documentation
-- **Swagger/OpenAPI 3.0** - API documentation
-- **SpringDoc** - Swagger integration
-
-### Build & Dependencies
-- **Maven** - Build tool & dependency management
-- **Lombok** - Reduce boilerplate code
-
-### Other Libraries
-- **Jakarta Validation** - Input validation
-- **Jackson** - JSON serialization
-
 ---
 
 ## 🏗️ Kiến trúc Project
 
-### Layered Architecture (MVC Pattern)
+### Layered Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -91,7 +557,7 @@
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│        Repository Layer                 │  ← Data Access
+│        Repository Layer                 │  ← Data Access (JPA)
 │  (UserRepository, DrinkRepository, ...) │
 └─────────────────┬───────────────────────┘
                   │
@@ -105,542 +571,92 @@
 ```
 src/main/java/com/utetea/backend/
 ├── 📁 config/              # Cấu hình (Security, Swagger, CORS)
-│   ├── SecurityConfig.java
-│   ├── SwaggerConfig.java
-│   └── WebConfig.java
-│
 ├── 📁 controller/          # REST API Controllers
-│   ├── AuthController.java          # Đăng ký, đăng nhập
-│   ├── DrinkController.java         # Xem menu
-│   ├── DrinkCategoryController.java # Xem categories
-│   ├── OrderController.java         # Đặt hàng
-│   ├── StoreController.java         # Xem cửa hàng
-│   ├── PromotionController.java     # Mã giảm giá
-│   ├── ManagerController.java       # Dashboard manager
-│   ├── AdminDrinkController.java    # Quản lý món
-│   └── AdminCategoryController.java # Quản lý categories
-│
 ├── 📁 service/             # Business Logic
-│   ├── AuthService.java
-│   ├── DrinkService.java
-│   ├── OrderService.java
-│   ├── ManagerService.java
-│   └── ...
-│
 ├── 📁 repository/          # Data Access Layer (JPA)
-│   ├── UserRepository.java
-│   ├── DrinkRepository.java
-│   ├── OrderRepository.java
-│   └── ...
-│
 ├── 📁 model/               # Entity Models (Database Tables)
-│   ├── User.java
-│   ├── Drink.java
-│   ├── DrinkCategory.java
-│   ├── Order.java
-│   ├── OrderItem.java
-│   └── ...
-│
 ├── 📁 dto/                 # Data Transfer Objects
-│   ├── LoginRequest.java
-│   ├── LoginResponse.java
-│   ├── DrinkDto.java
-│   ├── OrderDto.java
-│   └── ...
-│
 ├── 📁 security/            # Security & JWT
-│   ├── JwtUtil.java
-│   ├── JwtAuthenticationFilter.java
-│   ├── SecurityConfig.java
-│   └── CustomUserDetailsService.java
-│
 ├── 📁 exception/           # Exception Handling
-│   ├── GlobalExceptionHandler.java
-│   ├── BusinessException.java
-│   └── ResourceNotFoundException.java
-│
 └── 📁 mapper/              # Entity ↔ DTO Mappers
-    ├── DrinkMapper.java
-    ├── OrderMapper.java
-    └── ...
 ```
-
----
-
-## 💾 Cấu trúc Database
-
-### Entity Relationship Diagram (ERD)
-
-```
-┌──────────────┐
-│    users     │
-└──────┬───────┘
-       │ 1
-       │
-       │ N
-┌──────▼───────┐      N ┌──────────────┐
-│   orders     │◄───────┤  promotions  │
-└──────┬───────┘        └──────────────┘
-       │ 1
-       │        N ┌──────────────┐
-       │ N      ┌─┤    stores    │
-┌──────▼───────┐│ └──────────────┘
-│ order_items  ││
-└──────┬───────┘│
-       │ 1      │
-       │        │
-       │ N      │
-┌──────▼────────▼──┐
-│ order_item_      │
-│   toppings       │
-└──────────────────┘
-
-┌──────────────────┐
-│ drink_categories │
-└────────┬─────────┘
-         │ 1
-         │
-         │ N
-    ┌────▼─────┐
-    │  drinks  │
-    └────┬─────┘
-         │ 1
-    ┌────┴─────┬────────────┐
-    │ N        │ N          │
-┌───▼──────┐ ┌─▼──────────┐│
-│drink_    │ │drink_      ││
-│sizes     │ │toppings    ││
-└──────────┘ └────────────┘│
-                           │
-                           └─► order_items
-```
-
-### Các bảng chính
-
-| Bảng | Mô tả | Số records |
-|------|-------|------------|
-| `users` | Người dùng (USER, MANAGER) | 4 |
-| `drink_categories` | Loại đồ uống | 4 |
-| `drinks` | Món nước | 16 |
-| `drink_sizes` | Size món (M, L, Jumbo) | ~40 |
-| `drink_toppings` | Topping | ~10 |
-| `stores` | Cửa hàng | 2 |
-| `promotions` | Mã giảm giá | 3 |
-| `orders` | Đơn hàng | Dynamic |
-| `order_items` | Chi tiết đơn | Dynamic |
-| `order_item_toppings` | Topping trong đơn | Dynamic |
-
-### Dữ liệu mẫu
-
-#### Users (Tài khoản test)
-```
-Username: manager_ute     | Password: 123456 | Role: MANAGER
-Username: ute_student_01  | Password: 123456 | Role: USER (BRONZE)
-Username: ute_student_02  | Password: 123456 | Role: USER (SILVER)
-Username: ute_student_03  | Password: 123456 | Role: USER (GOLD)
-```
-
-#### Categories
-1. **Milk Tea** - Trà sữa Houjicha (4 món)
-2. **Fruit Tea** - Trà trái cây (5 món)
-3. **Macchiato** - Trà kem cheese (3 món)
-4. **Special** - Đồ uống đặc biệt (4 món)
-
-#### Promotions
-- **STUDENT20**: Giảm 20% (đơn tối thiểu 50,000đ)
-- **FREESHIPUTE**: Giảm 15,000đ ship (đơn tối thiểu 60,000đ)
-- **COMBO4UTE**: Giảm 30,000đ (đơn tối thiểu 120,000đ)
-
----
-
-## ⚙️ Cài đặt & Chạy
-
-### Yêu cầu hệ thống
-
-- ✅ Java JDK 17+
-- ✅ Maven 3.6+ (hoặc dùng Maven Wrapper)
-- ✅ MySQL 8.0+ (hoặc dùng cloud database)
-- ✅ IDE: IntelliJ IDEA / Eclipse / VS Code (tùy chọn)
-
-### Bước 1: Clone project
-
-```bash
-git clone <repository-url>
-cd backend_utetea
-```
-
-### Bước 2: Cấu hình database
-
-**Option A: Dùng Cloud Database (Đã setup sẵn)**
-
-File `application.properties` đã cấu hình sẵn:
-```properties
-spring.datasource.url=jdbc:mysql://mysql-16b47c6b-phongtran080809-7c70.c.aivencloud.com:26260/LTDD_Thong
-spring.datasource.username=avnadmin
-spring.datasource.password=AVNS_Ix83Fzpvp1FUIgDMvry
-```
-
-✅ Không cần làm gì thêm!
-
-**Option B: Dùng MySQL Local**
-
-1. Tạo database:
-```sql
-CREATE DATABASE LTDD_Thongtesst CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-2. Cập nhật `application.properties`:
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/LTDD_Thongtesst
-spring.datasource.username=root
-spring.datasource.password=your_password
-```
-
-3. Import dữ liệu:
-```bash
-mysql -u root -p LTDD_Thongtesst < src/main/resources/data-ltdd.sql
-```
-
-### Bước 3: Build project
-
-```bash
-# Windows
-.\mvnw.cmd clean install
-
-# Mac/Linux
-./mvnw clean install
-```
-
-### Bước 4: Chạy application
-
-```bash
-# Windows
-.\mvnw.cmd spring-boot:run
-
-# Mac/Linux
-./mvnw spring-boot:run
-```
-
-### Bước 5: Kiểm tra
-
-Server chạy tại: **http://localhost:8080**
-
-Test API:
-- Browser: http://localhost:8080/api/drinks
-- Swagger UI: http://localhost:8080/swagger-ui.html
-
----
-
-## 📡 API Endpoints
-
-### 🔓 Public Endpoints (Không cần authentication)
-
-#### Authentication
-```http
-POST   /api/auth/register      # Đăng ký tài khoản
-POST   /api/auth/login         # Đăng nhập
-GET    /api/auth/health        # Health check
-```
-
-#### Drinks & Menu
-```http
-GET    /api/drinks             # Lấy tất cả món
-GET    /api/drinks/{id}        # Chi tiết món
-GET    /api/drinks/search      # Tìm kiếm món
-GET    /api/drinks/page        # Phân trang
-```
-
-#### Categories
-```http
-GET    /api/categories         # Lấy tất cả categories
-GET    /api/categories/{id}    # Chi tiết category
-```
-
-#### Stores
-```http
-GET    /api/stores             # Lấy tất cả cửa hàng
-GET    /api/stores/{id}        # Chi tiết cửa hàng
-GET    /api/stores/search      # Tìm kiếm cửa hàng
-```
-
-#### Promotions
-```http
-GET    /api/promotions         # Lấy tất cả mã giảm giá
-GET    /api/promotions/validate # Kiểm tra mã hợp lệ
-```
-
----
-
-### 🔐 User Endpoints (Cần JWT token)
-
-#### Orders
-```http
-POST   /api/orders             # Tạo đơn hàng mới
-GET    /api/orders/user/{userId}         # Lịch sử đơn
-GET    /api/orders/user/{userId}/current # Đơn hiện tại
-GET    /api/orders/{orderId}   # Chi tiết đơn
-```
-
----
-
-### 👨‍💼 Manager Endpoints (Chỉ MANAGER)
-
-#### Dashboard
-```http
-GET    /api/manager/summary    # Thống kê tổng quan
-GET    /api/manager/orders     # Xem tất cả đơn hàng
-GET    /api/manager/orders/{id} # Chi tiết đơn
-PUT    /api/manager/orders/{id}/status # Cập nhật trạng thái
-```
-
-#### Quản lý Categories
-```http
-GET    /api/admin/categories   # Xem tất cả (bao gồm ẩn)
-POST   /api/admin/categories   # Thêm category mới
-PUT    /api/admin/categories/{id} # Sửa category
-DELETE /api/admin/categories/{id} # Ẩn category
-```
-
-#### Quản lý Drinks
-```http
-POST   /api/admin/drinks       # Thêm món mới
-PUT    /api/admin/drinks/{id}  # Sửa món
-DELETE /api/admin/drinks/{id}  # Ẩn món
-```
-
----
-
-### 📝 Request/Response Examples
-
-#### Login
-```http
-POST /api/auth/login
-Content-Type: application/json
-
-{
-  "usernameOrPhone": "ute_student_01",
-  "password": "123456"
-}
-```
-
-Response:
-```json
-{
-  "success": true,
-  "message": "Login successful",
-  "data": {
-    "id": 2,
-    "username": "ute_student_01",
-    "fullName": "Nguyen Thi A",
-    "phone": "0909000001",
-    "role": "USER",
-    "memberTier": "BRONZE",
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
-}
-```
-
-#### Create Order
-```http
-POST /api/orders
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "userId": 2,
-  "storeId": 1,
-  "type": "DELIVERY",
-  "address": "KTX khu A, UTE",
-  "paymentMethod": "COD",
-  "promotionCode": "STUDENT20",
-  "items": [
-    {
-      "drinkId": 1,
-      "sizeName": "L",
-      "quantity": 2,
-      "note": "Ít đường",
-      "toppings": [
-        { "toppingName": "Trân châu đen" }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## ✨ Tính năng
-
-### 👤 User Features
-
-- ✅ **Authentication**
-  - Đăng ký tài khoản mới
-  - Đăng nhập với username/phone
-  - JWT token authentication
-  - Password hashing với BCrypt
-
-- ✅ **Menu & Drinks**
-  - Xem 16 món nước theo 4 categories
-  - Tìm kiếm món theo tên
-  - Xem chi tiết món (giá, mô tả, ảnh)
-  - Chọn size (M, L, Jumbo)
-  - Chọn topping (6+ loại)
-
-- ✅ **Ordering**
-  - Đặt hàng online
-  - Chọn loại: Delivery hoặc Pickup
-  - Áp dụng mã giảm giá
-  - Xem lịch sử đơn hàng
-  - Theo dõi trạng thái đơn
-
-- ✅ **Stores**
-  - Xem 2 cửa hàng UTE
-  - Xem địa chỉ, giờ mở cửa
-  - Tìm kiếm cửa hàng gần nhất
-
-- ✅ **Promotions**
-  - Xem mã giảm giá có sẵn
-  - Kiểm tra mã hợp lệ
-  - Tự động tính discount
-
-### 👨‍💼 Manager Features
-
-- ✅ **Dashboard**
-  - Thống kê tổng quan (doanh thu, đơn hàng)
-  - Xem tất cả đơn hàng
-  - Lọc theo trạng thái, ngày
-  - Cập nhật trạng thái đơn
-
-- ✅ **Menu Management**
-  - Thêm/sửa/xóa món nước
-  - Quản lý categories
-  - Cập nhật giá, mô tả
-  - Ẩn/hiện món
-
-- ✅ **Order Management**
-  - Xem chi tiết đơn hàng
-  - Cập nhật trạng thái:
-    - PENDING → MAKING → SHIPPING → DONE
-    - Hoặc CANCELED
 
 ---
 
 ## 🔒 Security
 
-### Authentication Flow
+### Authentication
 
-```
-1. User login → POST /api/auth/login
-2. Server validates credentials
-3. Server generates JWT token
-4. Client stores token
-5. Client sends token in header: Authorization: Bearer <token>
-6. Server validates token for protected endpoints
-```
-
-### Password Security
-
-- Passwords được hash bằng **BCrypt** (cost factor: 10)
-- Không lưu plain text password
-- Validation: minimum 6 characters
-
-### JWT Configuration
-
-```properties
-jwt.secret=utetea-secret-key-for-jwt-token-generation-minimum-256-bits
-jwt.expiration=86400000  # 24 hours
-```
+- **JWT Token:** Expiration 24 hours
+- **Password:** BCrypt hashing (cost factor: 10)
+- **Authorization:** Role-based (USER, MANAGER)
 
 ### CORS Configuration
 
-- Cho phép tất cả origins (`*`) - Development only
-- Production nên giới hạn specific domains
-
----
-
-## 📚 Tài liệu
-
-### Tài liệu chi tiết
-
-1. **HUONG-DAN-CHAY-API.md** - Hướng dẫn chạy API từng bước
-2. **DATABASE-GUIDE.md** - Hướng dẫn database chi tiết
-3. **API-DOCUMENTATION.md** - Tài liệu API đầy đủ
-4. **SETUP-INSTRUCTIONS.md** - Hướng dẫn setup
-5. **QUICK-START.txt** - Quick start guide
-
-### Swagger UI
-
-Truy cập: **http://localhost:8080/swagger-ui.html**
-
-- Xem tất cả API endpoints
-- Test API trực tiếp trên browser
-- Xem request/response schema
-- Authorize với JWT token
-
-### Postman Collection
-
-Import OpenAPI spec từ: **http://localhost:8080/v3/api-docs**
-
----
-
-
-### Test với cURL
-
-```bash
-# Health check
-curl http://localhost:8080/api/auth/health
-
-# Get drinks
-curl http://localhost:8080/api/drinks
-
-# Login
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"usernameOrPhone":"ute_student_01","password":"123456"}'
-```
-
-### Test từ Android
-
 ```java
-// Base URL
-String BASE_URL = "http://192.168.1.100:8080/";
-
-// Retrofit setup
-Retrofit retrofit = new Retrofit.Builder()
-    .baseUrl(BASE_URL)
-    .addConverterFactory(GsonConverterFactory.create())
-    .build();
+// Cho phép tất cả origins (Development)
+// Production nên giới hạn specific domains
+allowedOrigins: "*"
+allowedMethods: GET, POST, PUT, DELETE
 ```
 
-**Lưu ý:** Thay `192.168.1.100` bằng IP máy tính của bạn
+---
+
+## 📱 Kết nối với Android App
+
+### Emulator
+```kotlin
+private const val BASE_URL = "http://10.0.2.2:8080/api/"
+```
+
+### Device thật
+```kotlin
+// Thay YOUR_IP bằng IP máy tính (VD: 192.168.1.100)
+private const val BASE_URL = "http://YOUR_IP:8080/api/"
+```
+
+**Lấy IP máy tính:**
+```bash
+# Windows
+ipconfig
+
+# Mac/Linux
+ifconfig
+```
+
+---
+
+## 🛠️ Công nghệ sử dụng
+
+| Công nghệ | Version | Mục đích |
+|-----------|---------|----------|
+| Java | 17 | Programming language |
+| Spring Boot | 3.5.7 | Application framework |
+| Spring Security | 6.x | Authentication & Authorization |
+| Spring Data JPA | 3.x | Database ORM |
+| MySQL | 8.0 | Relational database |
+| JWT | 0.11.5 | Token-based auth |
+| Swagger/OpenAPI | 3.0 | API documentation |
+| Lombok | Latest | Reduce boilerplate |
+| Maven | 3.6+ | Build tool |
 
 ---
 
 ## 🐛 Troubleshooting
 
 ### Port 8080 đã được sử dụng
-
 ```properties
-# Đổi port trong application.properties
+# Thêm vào application.properties
 server.port=8081
 ```
 
-### Không kết nối được MySQL
-
-- Kiểm tra MySQL service đã chạy
-- Kiểm tra username/password
-- Dùng cloud database (đã setup sẵn)
-
 ### Java version không đúng
-
 ```bash
 java -version  # Phải >= 17
 ```
-
 Cài Java 17: https://adoptium.net/
 
 ### Maven command not found
-
 Dùng Maven Wrapper:
 ```bash
 .\mvnw.cmd spring-boot:run  # Windows
@@ -649,31 +665,9 @@ Dùng Maven Wrapper:
 
 ---
 
-## 📂 Assets & Images
-
-### Cấu trúc folder ảnh
-
-```
-assets/drinks/
-├── milk_tea/          # 4 món trà sữa
-├── fruit_tea/         # 5 món trà trái cây
-├── macchiato/         # 3 món macchiato
-└── special/           # 4 món đặc biệt
-```
-
-### Truy cập ảnh
-
-```
-http://localhost:8080/assets/drinks/milk_tea/ute_houjicha_classic.png
-http://localhost:8080/assets/drinks/fruit_tea/dao_hong_ute.png
-```
-
----
-
-## 🚀 Deployment
+## 📦 Build & Deploy
 
 ### Build JAR file
-
 ```bash
 .\mvnw.cmd clean package
 ```
@@ -681,23 +675,15 @@ http://localhost:8080/assets/drinks/fruit_tea/dao_hong_ute.png
 File JAR: `target/backend-0.0.1-SNAPSHOT.jar`
 
 ### Chạy JAR
-
 ```bash
 java -jar target/backend-0.0.1-SNAPSHOT.jar
 ```
 
-### Environment Variables
+---
 
-```bash
-# Database
-export DB_URL=jdbc:mysql://host:port/database
-export DB_USERNAME=username
-export DB_PASSWORD=password
+## 📄 License
 
-# JWT
-export JWT_SECRET=your-secret-key
-export JWT_EXPIRATION=86400000
-```
+MIT License
 
 ---
 
@@ -711,32 +697,10 @@ export JWT_EXPIRATION=86400000
 
 ---
 
-## 📄 License
+<div align="center">
 
-MIT License - Xem file [LICENSE](LICENSE) để biết thêm chi tiết
+**🍵 UTE Tea - Trà sữa cho sinh viên UTE 🍵**
 
----
+Made with ❤️ by UTE Students
 
-## 🙏 Acknowledgments
-
-- Spring Boot Documentation
-- MySQL Documentation
-- JWT.io
-- Swagger/OpenAPI
-
----
-
-## 📞 Contact & Support
-
-Nếu gặp vấn đề hoặc có câu hỏi:
-
-1. Đọc tài liệu trong folder `docs/`
-2. Kiểm tra Troubleshooting section
-3. Xem Swagger UI để test API
-4. Kiểm tra logs trong console
-
----
-
-**Happy Coding! 🎉**
-
-*Last updated: November 27, 2025*
+</div>
