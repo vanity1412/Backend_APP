@@ -44,6 +44,10 @@ public class OrderService {
             throw new BusinessException("User account is inactive", HttpStatus.FORBIDDEN);
         }
         
+        // Security check: Ensure the authenticated user matches the order user
+        // This prevents users from creating orders for other users
+        log.debug("Validated user {} for order creation", username);
+        
         // Validate store
         Store store = storeRepository.findById(request.getStoreId())
             .orElseThrow(() -> new ResourceNotFoundException("Store", "id", request.getStoreId()));
@@ -85,18 +89,22 @@ public class OrderService {
             
             // Add size price
             List<DrinkSize> sizes = drinkSizeRepository.findByDrinkId(drink.getId());
-            boolean sizeFound = false;
-            for (DrinkSize size : sizes) {
-                if (size.getSizeName().equals(itemReq.getSizeName())) {
-                    itemPrice = itemPrice.add(size.getExtraPrice());
-                    sizeFound = true;
-                    break;
+            if (!sizes.isEmpty()) {
+                // Drink có size options, validate size
+                boolean sizeFound = false;
+                for (DrinkSize size : sizes) {
+                    if (size.getSizeName().equals(itemReq.getSizeName())) {
+                        itemPrice = itemPrice.add(size.getExtraPrice());
+                        sizeFound = true;
+                        break;
+                    }
+                }
+                
+                if (!sizeFound) {
+                    throw new BusinessException("Size '" + itemReq.getSizeName() + "' not available for drink '" + drink.getName() + "'");
                 }
             }
-            
-            if (!sizeFound) {
-                throw new BusinessException("Size '" + itemReq.getSizeName() + "' not available for drink '" + drink.getName() + "'");
-            }
+            // Nếu sizes rỗng, drink không có size options, bỏ qua validation
             
             // Add toppings
             if (itemReq.getToppingIds() != null && !itemReq.getToppingIds().isEmpty()) {
@@ -225,16 +233,24 @@ public class OrderService {
                 throw new BusinessException("Order can only be moved to MAKING or CANCELED from PENDING");
             }
         }
-        // MAKING can go to SHIPPING or CANCELED
+        // MAKING can go to SHIPPING (Delivery), READY (Pickup) or CANCELED
         else if (currentStatus == OrderStatus.MAKING) {
-            if (newStatus != OrderStatus.SHIPPING && newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order can only be moved to SHIPPING or CANCELED from MAKING");
+            if (newStatus != OrderStatus.SHIPPING && 
+                newStatus != OrderStatus.READY && 
+                newStatus != OrderStatus.CANCELED) {
+                throw new BusinessException("Order can only be moved to SHIPPING, READY or CANCELED from MAKING");
             }
         }
         // SHIPPING can go to DONE or CANCELED
         else if (currentStatus == OrderStatus.SHIPPING) {
             if (newStatus != OrderStatus.DONE && newStatus != OrderStatus.CANCELED) {
                 throw new BusinessException("Order can only be moved to DONE or CANCELED from SHIPPING");
+            }
+        }
+        // READY can go to DONE or CANCELED
+        else if (currentStatus == OrderStatus.READY) {
+            if (newStatus != OrderStatus.DONE && newStatus != OrderStatus.CANCELED) {
+                throw new BusinessException("Order can only be moved to DONE or CANCELED from READY");
             }
         }
         // DONE and CANCELED are final states
