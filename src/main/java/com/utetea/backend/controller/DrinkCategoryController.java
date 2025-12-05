@@ -32,4 +32,10 @@ public class DrinkCategoryController {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         }
     }
+    
+    @GetMapping("/{categoryId}/drinks")
+    public ResponseEntity<ApiResponse<List<com.utetea.backend.dto.DrinkDto>>> getDrinksByCategory(@PathVariable Long categoryId) {
+        List<com.utetea.backend.dto.DrinkDto> drinks = categoryService.getDrinksByCategory(categoryId);
+        return ResponseEntity.ok(ApiResponse.success(drinks));
+    }
 }

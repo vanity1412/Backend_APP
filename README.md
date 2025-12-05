@@ -114,6 +114,7 @@ Kết quả mong đợi:
 | `GET` | `/api/drinks` | Lấy danh sách món |
 | `GET` | `/api/drinks/{id}` | Chi tiết món |
 | `GET` | `/api/categories` | Lấy danh mục |
+| `GET` | `/api/categories/{categoryId}/drinks` | **🆕 Lấy sản phẩm theo danh mục** |
 | `GET` | `/api/stores` | Lấy cửa hàng |
 | `GET` | `/api/promotions` | Lấy mã giảm giá |
 

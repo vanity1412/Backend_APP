@@ -1,9 +1,11 @@
 package com.utetea.backend.service;
 
 import com.utetea.backend.dto.DrinkCategoryDto;
+import com.utetea.backend.dto.DrinkDto;
 import com.utetea.backend.mapper.DrinkCategoryMapper;
 import com.utetea.backend.model.DrinkCategory;
 import com.utetea.backend.repository.DrinkCategoryRepository;
+import com.utetea.backend.repository.DrinkRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +19,8 @@ public class DrinkCategoryService {
     
     private final DrinkCategoryRepository categoryRepository;
     private final DrinkCategoryMapper categoryMapper;
+    private final DrinkRepository drinkRepository;
+    private final DrinkService drinkService;
     
     @Transactional(readOnly = true)
     public List<DrinkCategoryDto> getAllActiveCategories() {
@@ -39,6 +43,18 @@ public class DrinkCategoryService {
         DrinkCategory category = categoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Category not found with id: " + id));
         return categoryMapper.toDto(category);
+    }
+    
+    @Transactional(readOnly = true)
+    public List<DrinkDto> getDrinksByCategory(Long categoryId) {
+        // Kiểm tra category có tồn tại không
+        categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new RuntimeException("Category not found with id: " + categoryId));
+        
+        // Lấy tất cả drinks thuộc category này và đang active
+        return drinkRepository.findByCategoryIdAndIsActiveTrue(categoryId).stream()
+                .map(drink -> drinkService.getDrinkById(drink.getId()))
+                .collect(Collectors.toList());
     }
     
     @Transactional
