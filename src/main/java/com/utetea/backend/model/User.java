@@ -16,7 +16,7 @@ public class User extends AuditEntity {
     @Column(unique = true, length = 100)
     private String email;
     
-    @Column(unique = true, length = 15)
+    @Column(unique = true, length = 15, nullable = true)
     private String phone;
     
     @Column(nullable = false, length = 255)
@@ -50,4 +50,7 @@ public class User extends AuditEntity {
     
     @Column(name = "is_blocked", nullable = false)
     private Boolean isBlocked = false;
+
+    @Column(length = 255)
+    private String avatarUrl;
 }

@@ -8,6 +8,7 @@ import lombok.*;
 public class UserProfileDto {
     private Long id;
     private String username;
+    private String email;
     private String phone;
     private String fullName;
     private String address;
@@ -15,4 +16,5 @@ public class UserProfileDto {
     private MemberTier memberTier;
     private Integer points;
     private Boolean active;
+    private String avatarUrl;
 }

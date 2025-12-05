@@ -1,9 +1,6 @@
 package com.utetea.backend.controller;
 
-import com.utetea.backend.dto.ApiResponse;
-import com.utetea.backend.dto.LoginRequest;
-import com.utetea.backend.dto.LoginResponse;
-import com.utetea.backend.dto.RegisterRequest;
+import com.utetea.backend.dto.*;
 import com.utetea.backend.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -95,4 +92,18 @@ public class AuthController {
         LoginResponse response = authService.login(request);
         return ResponseEntity.ok(ApiResponse.success("Login successful", response));
     }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        authService.initiateForgotPassword(request);
+        return ResponseEntity.ok("Mã xác nhận đã được gửi đến email của bạn.");
+    }
+
+    // API Đặt lại mật khẩu cho user quên mật khẩu
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok("Đặt lại mật khẩu thành công.");
+    }
+
 }
