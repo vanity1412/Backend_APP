@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface DrinkRepository extends JpaRepository<Drink, Long> {
@@ -22,4 +23,30 @@ public interface DrinkRepository extends JpaRepository<Drink, Long> {
     
     @Query("SELECT d FROM Drink d WHERE LOWER(d.name) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     List<Drink> searchByNameAll(@Param("keyword") String keyword);
+    
+    // ===== FIX N+1 QUERY: Sử dụng JOIN FETCH để load sizes và toppings cùng lúc =====
+    
+    @Query("SELECT DISTINCT d FROM Drink d " +
+           "LEFT JOIN FETCH d.category " +
+           "LEFT JOIN FETCH d.sizes " +
+           "WHERE d.isActive = true")
+    List<Drink> findByIsActiveTrueWithSizesAndCategory();
+    
+    @Query("SELECT DISTINCT d FROM Drink d " +
+           "LEFT JOIN FETCH d.category " +
+           "LEFT JOIN FETCH d.sizes " +
+           "WHERE d.id = :id")
+    Optional<Drink> findByIdWithSizesAndCategory(@Param("id") Long id);
+    
+    @Query("SELECT DISTINCT d FROM Drink d " +
+           "LEFT JOIN FETCH d.category " +
+           "LEFT JOIN FETCH d.sizes " +
+           "WHERE d.category.id = :categoryId AND d.isActive = true")
+    List<Drink> findByCategoryIdWithSizesAndCategory(@Param("categoryId") Long categoryId);
+    
+    @Query("SELECT DISTINCT d FROM Drink d " +
+           "LEFT JOIN FETCH d.category " +
+           "LEFT JOIN FETCH d.sizes " +
+           "WHERE d.isActive = true AND LOWER(d.name) LIKE LOWER(CONCAT('%', :keyword, '%'))")
+    List<Drink> searchByNameWithSizesAndCategory(@Param("keyword") String keyword);
 }

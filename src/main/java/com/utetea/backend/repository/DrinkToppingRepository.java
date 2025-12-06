@@ -17,4 +17,8 @@ public interface DrinkToppingRepository extends JpaRepository<DrinkTopping, Long
     // Get toppings chung (drink_id = NULL) + toppings riêng của drink
     @Query("SELECT t FROM DrinkTopping t WHERE (t.drink.id = :drinkId OR t.drink IS NULL) AND t.isActive = true")
     List<DrinkTopping> findByDrinkIdOrDrinkIdIsNullAndIsActiveTrue(@Param("drinkId") Long drinkId);
+    
+    // Batch load toppings cho nhiều drinks (FIX N+1)
+    @Query("SELECT t FROM DrinkTopping t WHERE t.drink.id IN :drinkIds AND t.isActive = true")
+    List<DrinkTopping> findByDrinkIdInAndIsActiveTrue(@Param("drinkIds") List<Long> drinkIds);
 }

@@ -56,7 +56,17 @@ public class OrderService {
         order.setUser(user);
         order.setStore(store);
         order.setType(request.getType());
-        order.setAddress(request.getAddress());
+        
+        // Xử lý address: nếu PICKUP thì set "Tại Cửa Hàng", nếu DELIVERY thì lấy từ request
+        if (request.getType() == OrderType.PICKUP) {
+            order.setAddress("Tại Cửa Hàng");
+        } else if (request.getType() == OrderType.DELIVERY) {
+            if (request.getAddress() == null || request.getAddress().trim().isEmpty()) {
+                throw new BusinessException("Địa chỉ giao hàng không được để trống");
+            }
+            order.setAddress(request.getAddress());
+        }
+        
         order.setPickupTime(request.getPickupTime());
         order.setStatus(OrderStatus.PENDING);
         order.setPaymentMethod(request.getPaymentMethod());

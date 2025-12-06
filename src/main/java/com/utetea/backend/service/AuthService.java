@@ -29,22 +29,29 @@ public class AuthService {
 
     @Transactional
     public LoginResponse register(RegisterRequest request) {
+        // Validate username uniqueness
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new BusinessException("Username already exists");
         }
-        if (userRepository.existsByPhone(request.getPhone())) {
+        
+        // Validate phone uniqueness (if provided)
+        if (request.getPhone() != null && !request.getPhone().isEmpty() 
+            && userRepository.existsByPhone(request.getPhone())) {
             throw new BusinessException("Phone already exists");
         }
-        if (request.getEmail() != null && !request.getEmail().isEmpty() && userRepository.existsByEmail(request.getEmail())) {
+        
+        // Validate email uniqueness (if provided)
+        if (request.getEmail() != null && !request.getEmail().isEmpty() 
+            && userRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException("Email already exists");
         }
 
         User user = new User();
         user.setUsername(request.getUsername());
-        user.setEmail(request.getPhone());
+        user.setEmail(request.getEmail()); // FIX BUG: Trước đây set email = phone
         user.setPhone(request.getPhone());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setFullName(request.getFullName());
+        user.setFullName(request.getFullName() != null ? request.getFullName() : request.getUsername());
         user.setAddress(request.getAddress());
         user.setRole(UserRole.USER);
         user.setMemberTier(MemberTier.BRONZE);

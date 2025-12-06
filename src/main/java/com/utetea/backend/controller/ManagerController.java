@@ -163,4 +163,19 @@ public class ManagerController {
         
         return ResponseEntity.ok(ApiResponse.success(users));
     }
+    
+    // ==================== REVENUE STATISTICS ====================
+    
+    @GetMapping("/statistics/revenue")
+    @Operation(summary = "Revenue Statistics", description = "Thống kê doanh thu theo ngày/tháng và top sản phẩm")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.RevenueStatisticsDto>> getRevenueStatistics(
+            @RequestParam(defaultValue = "7") Integer days,
+            @RequestParam(defaultValue = "6") Integer months) {
+        
+        log.info("GET /api/manager/statistics/revenue - days: {}, months: {}", days, months);
+        
+        com.utetea.backend.dto.RevenueStatisticsDto stats = managerService.getRevenueStatistics(days, months);
+        return ResponseEntity.ok(ApiResponse.success("Statistics loaded", stats));
+    }
 }

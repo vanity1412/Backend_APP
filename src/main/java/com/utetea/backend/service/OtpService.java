@@ -1,16 +1,17 @@
 package com.utetea.backend.service;
 
 import com.utetea.backend.model.User;
+import com.utetea.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
-import java.util.Random;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -18,32 +19,24 @@ import java.util.concurrent.TimeUnit;
 public class OtpService {
     
     private final JavaMailSender mailSender;
-    private final com.utetea.backend.repository.UserRepository userRepository;
+    private final UserRepository userRepository;
     
-    private static final long OTP_VALIDITY_MINUTES = 5; // OTP valid for 5 minutes
+    private static final long OTP_VALIDITY_MINUTES = 5;
+    private static final SecureRandom secureRandom = new SecureRandom();
     
     /**
-     * Generate 6-digit OTP
+     * Generate 6-digit OTP using SecureRandom for better security
      */
     public String generateOtp() {
-        Random random = new Random();
-        int otp = 100000 + random.nextInt(900000); // 6 digits
+        int otp = 100000 + secureRandom.nextInt(900000);
         return String.valueOf(otp);
     }
     
     /**
-     * Send OTP to phone (via email for now, can integrate SMS later)
+     * Send OTP via email
      */
     public void sendOtp(String otp, String email) {
-        try {
-        } catch (Exception e) {
-            System.err.println("ERROR saving user with OTP: " + e.getMessage());
-            e.printStackTrace();
-            throw e;
-        }
-
-        // Send OTP via email
-        System.out.println("Preparing to send email...");
+        log.info("Preparing to send OTP email to: {}", email);
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom("watershoputetea@gmail.com");
@@ -58,65 +51,65 @@ public class OtpService {
                             "UTE Tea Team"
             );
 
-            System.out.println("Sending email to: " + email);
             mailSender.send(message);
-            System.out.println("Email sent successfully!");
+            log.info("OTP email sent successfully to: {}", email);
         } catch (Exception e) {
-            System.err.println("ERROR sending email: " + e.getMessage());
-            e.printStackTrace();
-            log.error("Failed to send OTP email: {}", e.getMessage());
+            log.error("Failed to send OTP email to {}: {}", email, e.getMessage());
             throw new RuntimeException("Failed to send OTP email");
         }
-
-        System.out.println("========== OtpService.sendOtp() END ==========");
     }
     
     /**
-     * Verify OTP
+     * Verify OTP by phone with transaction isolation to prevent race condition
+     * Uses SERIALIZABLE isolation to ensure atomic read-verify-clear operation
      */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public boolean verifyOtp(String phone, String otp) {
-        com.utetea.backend.model.User user = userRepository.findByPhone(phone).orElse(null);
+        User user = userRepository.findByPhone(phone).orElse(null);
         if (user == null) {
             log.warn("User not found for phone: {}", phone);
             return false;
         }
-        if (user.getOtp() == null || user.getOtpExpiry() == null) {
-            log.warn("No OTP stored for user: {}", user.getUsername());
-            return false;
-        }
-        if (java.time.LocalDateTime.now().isAfter(user.getOtpExpiry())) {
-            log.warn("OTP expired for user: {}", user.getUsername());
-            clearOtp(phone);
-            return false;
-        }
-        boolean isValid = user.getOtp().equals(otp);
-        if (isValid) {
-            clearOtp(phone);
-            log.info("OTP verified successfully for user: {}", user.getUsername());
-        } else {
-            log.warn("Invalid OTP for user: {}", user.getUsername());
-        }
-        return isValid;
+        return verifyAndClearOtp(user, otp);
     }
 
+    /**
+     * Verify OTP by email with transaction isolation to prevent race condition
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public boolean verifyOtpByEmail(String email, String otp) {
-        com.utetea.backend.model.User user = userRepository.findByEmail(email).orElse(null);
+        User user = userRepository.findByEmail(email).orElse(null);
         if (user == null) {
             log.warn("User not found for email: {}", email);
             return false;
         }
+        return verifyAndClearOtp(user, otp);
+    }
+    
+    /**
+     * Common method to verify OTP and clear it atomically
+     */
+    private boolean verifyAndClearOtp(User user, String otp) {
         if (user.getOtp() == null || user.getOtpExpiry() == null) {
             log.warn("No OTP stored for user: {}", user.getUsername());
             return false;
         }
-        if (java.time.LocalDateTime.now().isAfter(user.getOtpExpiry())) {
+        
+        if (LocalDateTime.now().isAfter(user.getOtpExpiry())) {
             log.warn("OTP expired for user: {}", user.getUsername());
-            clearOtpByEmail(email);
+            // Clear expired OTP
+            user.setOtp(null);
+            user.setOtpExpiry(null);
+            userRepository.save(user);
             return false;
         }
+        
         boolean isValid = user.getOtp().equals(otp);
         if (isValid) {
-            clearOtpByEmail(email);
+            // Clear OTP immediately after successful verification (atomic operation)
+            user.setOtp(null);
+            user.setOtpExpiry(null);
+            userRepository.save(user);
             log.info("OTP verified successfully for user: {}", user.getUsername());
         } else {
             log.warn("Invalid OTP for user: {}", user.getUsername());
@@ -127,6 +120,7 @@ public class OtpService {
     /**
      * Clear OTP for a phone number
      */
+    @Transactional
     public void clearOtp(String phone) {
         userRepository.findByPhone(phone).ifPresent(u -> {
             u.setOtp(null);
@@ -135,6 +129,10 @@ public class OtpService {
         });
     }
 
+    /**
+     * Clear OTP for an email
+     */
+    @Transactional
     public void clearOtpByEmail(String email) {
         userRepository.findByEmail(email).ifPresent(u -> {
             u.setOtp(null);

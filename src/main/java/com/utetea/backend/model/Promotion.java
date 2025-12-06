@@ -35,4 +35,17 @@ public class Promotion extends AuditEntity {
     
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
+
+    @Column(name = "max_discount_amount", precision = 10, scale = 2)
+private BigDecimal maxDiscountAmount;
+
+@Column(name = "min_order_amount", precision = 10, scale = 2)
+private BigDecimal minOrderAmount = BigDecimal.ZERO;
+
+@Column(name = "usage_limit")
+private Integer usageLimit;
+
+@Column(name = "used_count")
+private Integer usedCount = 0;
+
 }

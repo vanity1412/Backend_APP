@@ -12,16 +12,13 @@ import com.utetea.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +28,9 @@ public class ManagerService {
     private final OrderRepository orderRepository;
     private final OrderService orderService;
     private final UserRepository userRepository;
+    
+    @org.springframework.beans.factory.annotation.Autowired
+    private jakarta.persistence.EntityManager entityManager;
     
     @Transactional(readOnly = true)
     public DashboardSummaryDto getDashboardSummary() {
@@ -88,36 +88,28 @@ public class ManagerService {
     
     // ==================== USER MANAGEMENT ====================
     
+    /**
+     * FIX MEMORY ISSUE: Sử dụng database-level pagination thay vì load tất cả vào memory
+     */
     @Transactional(readOnly = true)
     public Page<UserDto> getAllUsers(String role, Pageable pageable) {
         log.info("Getting all users with role filter: {}", role);
         
-        List<User> users;
+        Page<User> usersPage;
         if (role != null && !role.isEmpty()) {
             try {
                 UserRole userRole = UserRole.valueOf(role.toUpperCase());
-                users = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() == userRole)
-                    .collect(Collectors.toList());
+                usersPage = userRepository.findByRole(userRole, pageable);
             } catch (IllegalArgumentException e) {
-                log.warn("Invalid role filter: {}", role);
-                users = userRepository.findAll();
+                log.warn("Invalid role filter: {}, returning all users", role);
+                usersPage = userRepository.findAll(pageable);
             }
         } else {
-            users = userRepository.findAll();
+            usersPage = userRepository.findAll(pageable);
         }
         
-        // Convert to UserDto
-        List<UserDto> userDtos = users.stream()
-            .map(UserDto::new)
-            .collect(Collectors.toList());
-        
-        // Manual pagination
-        int start = (int) pageable.getOffset();
-        int end = Math.min((start + pageable.getPageSize()), userDtos.size());
-        List<UserDto> pageContent = userDtos.subList(start, end);
-        
-        return new PageImpl<>(pageContent, pageable, userDtos.size());
+        // Map to DTO using Page.map() - efficient, no extra memory
+        return usersPage.map(UserDto::new);
     }
     
     @Transactional(readOnly = true)
@@ -146,29 +138,131 @@ public class ManagerService {
         return new UserDto(savedUser);
     }
     
+    /**
+     * FIX MEMORY ISSUE: Sử dụng database-level search với pagination
+     */
     @Transactional(readOnly = true)
     public Page<UserDto> searchUsers(String keyword, Pageable pageable) {
         log.info("Searching users with keyword: {}", keyword);
         
-        List<User> users = userRepository.findAll().stream()
-            .filter(u -> 
-                (u.getUsername() != null && u.getUsername().toLowerCase().contains(keyword.toLowerCase())) ||
-                (u.getFullName() != null && u.getFullName().toLowerCase().contains(keyword.toLowerCase())) ||
-                (u.getEmail() != null && u.getEmail().toLowerCase().contains(keyword.toLowerCase())) ||
-                (u.getPhone() != null && u.getPhone().contains(keyword))
-            )
-            .collect(Collectors.toList());
+        // Sử dụng database query thay vì load tất cả vào memory
+        Page<User> usersPage = userRepository.searchByKeyword(keyword, pageable);
         
-        // Convert to UserDto
-        List<UserDto> userDtos = users.stream()
-            .map(UserDto::new)
-            .collect(Collectors.toList());
+        return usersPage.map(UserDto::new);
+    }
+    
+    // ==================== REVENUE STATISTICS ====================
+    
+    @Transactional(readOnly = true)
+    public com.utetea.backend.dto.RevenueStatisticsDto getRevenueStatistics(Integer days, Integer months) {
+        log.info("Getting revenue statistics - days: {}, months: {}", days, months);
         
-        // Manual pagination
-        int start = (int) pageable.getOffset();
-        int end = Math.min((start + pageable.getPageSize()), userDtos.size());
-        List<UserDto> pageContent = userDtos.subList(start, end);
+        com.utetea.backend.dto.RevenueStatisticsDto stats = new com.utetea.backend.dto.RevenueStatisticsDto();
         
-        return new PageImpl<>(pageContent, pageable, userDtos.size());
+        // Calculate total revenue from DONE orders
+        String totalRevenueQuery = "SELECT COALESCE(SUM(o.finalPrice), 0) FROM Order o WHERE o.status = :status";
+        BigDecimal totalRevenue = entityManager.createQuery(totalRevenueQuery, BigDecimal.class)
+            .setParameter("status", OrderStatus.DONE)
+            .getSingleResult();
+        stats.setTotalRevenue(totalRevenue);
+        
+        // Get daily revenues (last N days)
+        if (days != null && days > 0) {
+            String dailyQuery = """
+                SELECT DATE(o.createdAt) as date, 
+                       COALESCE(SUM(o.finalPrice), 0) as revenue,
+                       COUNT(o.id) as orderCount
+                FROM Order o 
+                WHERE o.status = :status 
+                  AND o.createdAt >= CURRENT_DATE - :days
+                GROUP BY DATE(o.createdAt)
+                ORDER BY DATE(o.createdAt) DESC
+                """;
+            
+            @SuppressWarnings("unchecked")
+            List<Object[]> dailyResults = entityManager.createQuery(dailyQuery)
+                .setParameter("status", OrderStatus.DONE)
+                .setParameter("days", days)
+                .getResultList();
+            
+            List<com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue> dailyRevenues = new ArrayList<>();
+            for (Object[] row : dailyResults) {
+                java.time.LocalDate date = ((java.sql.Date) row[0]).toLocalDate();
+                BigDecimal revenue = (BigDecimal) row[1];
+                Long orderCount = ((Number) row[2]).longValue();
+                dailyRevenues.add(new com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue(date, revenue, orderCount));
+            }
+            stats.setDailyRevenues(dailyRevenues);
+        }
+        
+        // Get monthly revenues (last N months)
+        if (months != null && months > 0) {
+            String monthlyQuery = """
+                SELECT YEAR(o.createdAt) as year,
+                       MONTH(o.createdAt) as month,
+                       COALESCE(SUM(o.finalPrice), 0) as revenue,
+                       COUNT(o.id) as orderCount
+                FROM Order o 
+                WHERE o.status = :status
+                  AND o.createdAt >= DATE_SUB(CURRENT_DATE, INTERVAL :months MONTH)
+                GROUP BY YEAR(o.createdAt), MONTH(o.createdAt)
+                ORDER BY YEAR(o.createdAt) DESC, MONTH(o.createdAt) DESC
+                """;
+            
+            @SuppressWarnings("unchecked")
+            List<Object[]> monthlyResults = entityManager.createQuery(monthlyQuery)
+                .setParameter("status", OrderStatus.DONE)
+                .setParameter("months", months)
+                .getResultList();
+            
+            List<com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue> monthlyRevenues = new ArrayList<>();
+            for (Object[] row : monthlyResults) {
+                Integer year = (Integer) row[0];
+                Integer month = (Integer) row[1];
+                BigDecimal revenue = (BigDecimal) row[2];
+                Long orderCount = ((Number) row[3]).longValue();
+                monthlyRevenues.add(new com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue(year, month, revenue, orderCount));
+            }
+            stats.setMonthlyRevenues(monthlyRevenues);
+        }
+        
+        // Get top selling drinks
+        String topDrinksQuery = """
+            SELECT oi.drink.id,
+                   oi.drinkNameSnapshot,
+                   oi.drink.imageUrl,
+                   SUM(oi.quantity) as totalQuantity,
+                   SUM(oi.itemPrice) as totalRevenue
+            FROM OrderItem oi
+            JOIN oi.order o
+            WHERE o.status = :status
+            GROUP BY oi.drink.id, oi.drinkNameSnapshot, oi.drink.imageUrl
+            ORDER BY SUM(oi.quantity) DESC
+            """;
+        
+        @SuppressWarnings("unchecked")
+        List<Object[]> topDrinksResults = entityManager.createQuery(topDrinksQuery)
+            .setParameter("status", OrderStatus.DONE)
+            .setMaxResults(10)
+            .getResultList();
+        
+        List<com.utetea.backend.dto.RevenueStatisticsDto.TopSellingDrink> topDrinks = new ArrayList<>();
+        for (Object[] row : topDrinksResults) {
+            Long drinkId = (Long) row[0];
+            String drinkName = (String) row[1];
+            String imageUrl = (String) row[2];
+            Long totalQuantity = ((Number) row[3]).longValue();
+            BigDecimal drinkRevenue = (BigDecimal) row[4];
+            topDrinks.add(new com.utetea.backend.dto.RevenueStatisticsDto.TopSellingDrink(
+                drinkId, drinkName, imageUrl, totalQuantity, drinkRevenue));
+        }
+        stats.setTopSellingDrinks(topDrinks);
+        
+        log.info("Revenue statistics calculated - total: {}, daily entries: {}, monthly entries: {}, top drinks: {}",
+            totalRevenue, stats.getDailyRevenues() != null ? stats.getDailyRevenues().size() : 0,
+            stats.getMonthlyRevenues() != null ? stats.getMonthlyRevenues().size() : 0,
+            topDrinks.size());
+        
+        return stats;
     }
 }
