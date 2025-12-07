@@ -1,9 +1,12 @@
 package com.utetea.backend.service;
 
+import com.utetea.backend.dto.CreatePromotionRequest;
 import com.utetea.backend.dto.PromotionDto;
+import com.utetea.backend.dto.UpdatePromotionRequest;
 import com.utetea.backend.exception.BusinessException;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.mapper.PromotionMapper;
+import com.utetea.backend.model.DiscountType;
 import com.utetea.backend.model.Promotion;
 import com.utetea.backend.repository.PromotionRepository;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -22,6 +26,8 @@ public class PromotionService {
     
     private final PromotionRepository promotionRepository;
     private final PromotionMapper promotionMapper;
+    
+    // ========== USER APIs ==========
     
     @Transactional(readOnly = true)
     public List<PromotionDto> getAllActivePromotions() {
@@ -81,6 +87,149 @@ public class PromotionService {
         }
         
         log.info("Promotion code {} is valid for order amount {}", code, orderAmount);
+        return promotionMapper.toDto(promotion);
+    }
+    
+    // ========== MANAGER APIs ==========
+    
+    @Transactional(readOnly = true)
+    public List<PromotionDto> getAllPromotions() {
+        log.info("Getting all promotions for manager");
+        return promotionRepository.findAll()
+                .stream()
+                .map(promotionMapper::toDto)
+                .collect(Collectors.toList());
+    }
+    
+    @Transactional
+    public PromotionDto createPromotion(CreatePromotionRequest request) {
+        log.info("Creating new promotion with code: {}", request.getCode());
+        
+        // Validate code uniqueness
+        if (promotionRepository.findByCode(request.getCode()).isPresent()) {
+            throw new BusinessException("Mã voucher đã tồn tại: " + request.getCode());
+        }
+        
+        // Validate dates
+        if (request.getEndDate().isBefore(request.getStartDate())) {
+            throw new BusinessException("Ngày kết thúc phải sau ngày bắt đầu");
+        }
+        
+        // Validate discount value for PERCENT type
+        if (request.getDiscountType() == DiscountType.PERCENT) {
+            if (request.getDiscountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+                throw new BusinessException("Giá trị giảm giá phần trăm không được vượt quá 100%");
+            }
+        }
+        
+        Promotion promotion = Promotion.builder()
+                .code(request.getCode().toUpperCase())
+                .description(request.getDescription())
+                .discountType(request.getDiscountType())
+                .discountValue(request.getDiscountValue())
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .minOrderValue(request.getMinOrderValue())
+                .maxDiscountAmount(request.getMaxDiscountAmount())
+                .minOrderAmount(BigDecimal.ZERO)
+                .usageLimit(request.getUsageLimit())
+                .usedCount(0)
+                .isActive(request.getIsActive())
+                .build();
+        
+        promotion = promotionRepository.save(promotion);
+        log.info("Promotion created successfully with id: {}", promotion.getId());
+        
+        return promotionMapper.toDto(promotion);
+    }
+    
+    @Transactional
+    public PromotionDto updatePromotion(Long id, UpdatePromotionRequest request) {
+        log.info("Updating promotion with id: {}", id);
+        
+        Promotion promotion = promotionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion", "id", id));
+        
+        // Update fields if provided
+        if (request.getDescription() != null) {
+            promotion.setDescription(request.getDescription());
+        }
+        
+        if (request.getDiscountType() != null) {
+            promotion.setDiscountType(request.getDiscountType());
+        }
+        
+        if (request.getDiscountValue() != null) {
+            if (promotion.getDiscountType() == DiscountType.PERCENT && 
+                request.getDiscountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+                throw new BusinessException("Giá trị giảm giá phần trăm không được vượt quá 100%");
+            }
+            promotion.setDiscountValue(request.getDiscountValue());
+        }
+        
+        if (request.getStartDate() != null) {
+            promotion.setStartDate(request.getStartDate());
+        }
+        
+        if (request.getEndDate() != null) {
+            promotion.setEndDate(request.getEndDate());
+        }
+        
+        // Validate dates after update
+        if (promotion.getEndDate().isBefore(promotion.getStartDate())) {
+            throw new BusinessException("Ngày kết thúc phải sau ngày bắt đầu");
+        }
+        
+        if (request.getMinOrderValue() != null) {
+            promotion.setMinOrderValue(request.getMinOrderValue());
+        }
+        
+        if (request.getMaxDiscountAmount() != null) {
+            promotion.setMaxDiscountAmount(request.getMaxDiscountAmount());
+        }
+        
+        if (request.getUsageLimit() != null) {
+            promotion.setUsageLimit(request.getUsageLimit());
+        }
+        
+        if (request.getIsActive() != null) {
+            promotion.setIsActive(request.getIsActive());
+        }
+        
+        promotion = promotionRepository.save(promotion);
+        log.info("Promotion updated successfully with id: {}", promotion.getId());
+        
+        return promotionMapper.toDto(promotion);
+    }
+    
+    @Transactional
+    public void deletePromotion(Long id) {
+        log.info("Deleting promotion with id: {}", id);
+        
+        Promotion promotion = promotionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion", "id", id));
+        
+        // Check if promotion is being used
+        Integer usedCount = promotion.getUsedCount();
+        if (usedCount != null && usedCount > 0) {
+            throw new BusinessException("Không thể xóa voucher đã được sử dụng. Hãy vô hiệu hóa thay vì xóa.");
+        }
+        
+        promotionRepository.delete(promotion);
+        log.info("Promotion deleted successfully with id: {}", id);
+    }
+    
+    @Transactional
+    public PromotionDto togglePromotionStatus(Long id) {
+        log.info("Toggling promotion status with id: {}", id);
+        
+        Promotion promotion = promotionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion", "id", id));
+        
+        promotion.setIsActive(!promotion.getIsActive());
+        promotion = promotionRepository.save(promotion);
+        
+        log.info("Promotion status toggled to: {}", promotion.getIsActive());
         return promotionMapper.toDto(promotion);
     }
 }

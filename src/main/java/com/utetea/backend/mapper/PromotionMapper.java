@@ -19,7 +19,15 @@ public class PromotionMapper {
                 .startDate(promotion.getStartDate())
                 .endDate(promotion.getEndDate())
                 .minOrderValue(promotion.getMinOrderValue())
+                .maxDiscountAmount(promotion.getMaxDiscountAmount())
+                .minOrderAmount(promotion.getMinOrderAmount())
+                .usageLimit(promotion.getUsageLimit())
+                .usedCount(promotion.getUsedCount())
                 .isActive(promotion.getIsActive())
+                .createdAt(promotion.getCreatedAt() != null ? 
+                    promotion.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() : null)
+                .updatedAt(promotion.getUpdatedAt() != null ? 
+                    promotion.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() : null)
                 .build();
     }
 }

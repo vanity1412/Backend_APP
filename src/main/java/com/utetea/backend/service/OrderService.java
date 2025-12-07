@@ -152,33 +152,49 @@ public class OrderService {
         BigDecimal discount = BigDecimal.ZERO;
         if (request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
             Promotion promotion = promotionRepository.findByCode(request.getPromotionCode())
-                .orElseThrow(() -> new BusinessException("Invalid promotion code"));
+                .orElseThrow(() -> new BusinessException("Mã voucher không hợp lệ"));
             
             LocalDateTime now = LocalDateTime.now();
             if (!promotion.getIsActive()) {
-                throw new BusinessException("Promotion code is inactive");
+                throw new BusinessException("Mã voucher đã bị vô hiệu hóa");
             }
             
             if (promotion.getStartDate().isAfter(now)) {
-                throw new BusinessException("Promotion has not started yet");
+                throw new BusinessException("Mã voucher chưa có hiệu lực");
             }
             
             if (promotion.getEndDate().isBefore(now)) {
-                throw new BusinessException("Promotion has expired");
+                throw new BusinessException("Mã voucher đã hết hạn");
+            }
+            
+            // Check usage limit
+            if (promotion.getUsageLimit() != null && 
+                promotion.getUsedCount() >= promotion.getUsageLimit()) {
+                throw new BusinessException("Mã voucher đã hết lượt sử dụng");
             }
             
             if (totalPrice.compareTo(promotion.getMinOrderValue()) < 0) {
                 throw new BusinessException(String.format(
-                    "Minimum order amount is %s VND for this promotion", 
+                    "Giá trị đơn hàng tối thiểu là %s VND để sử dụng voucher này", 
                     promotion.getMinOrderValue()));
             }
             
             if (promotion.getDiscountType() == DiscountType.PERCENT) {
                 discount = totalPrice.multiply(promotion.getDiscountValue())
                     .divide(BigDecimal.valueOf(100));
+                
+                // Apply max discount limit for PERCENT type
+                if (promotion.getMaxDiscountAmount() != null && 
+                    discount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
+                    discount = promotion.getMaxDiscountAmount();
+                }
             } else {
                 discount = promotion.getDiscountValue();
             }
+            
+            // Increment usage count
+            promotion.setUsedCount(promotion.getUsedCount() + 1);
+            promotionRepository.save(promotion);
             
             order.setPromotion(promotion);
             log.info("Applied promotion: {} with discount: {}", promotion.getCode(), discount);

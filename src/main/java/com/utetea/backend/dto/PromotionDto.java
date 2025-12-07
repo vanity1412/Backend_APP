@@ -16,5 +16,11 @@ public class PromotionDto {
     private LocalDateTime startDate;
     private LocalDateTime endDate;
     private BigDecimal minOrderValue;
+    private BigDecimal maxDiscountAmount;
+    private BigDecimal minOrderAmount;
+    private Integer usageLimit;
+    private Integer usedCount;
     private Boolean isActive;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }
