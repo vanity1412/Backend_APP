@@ -72,6 +72,7 @@ public class DrinkCategoryService {
         
         category.setName(dto.getName());
         category.setDescription(dto.getDescription());
+        category.setImageUrl(dto.getImageUrl());
         category.setDisplayOrder(dto.getDisplayOrder());
         category.setIsActive(dto.getIsActive());
         

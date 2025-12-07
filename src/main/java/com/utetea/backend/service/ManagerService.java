@@ -28,6 +28,7 @@ public class ManagerService {
     private final OrderRepository orderRepository;
     private final OrderService orderService;
     private final UserRepository userRepository;
+    private final DrinkCategoryService categoryService;
     
     @org.springframework.beans.factory.annotation.Autowired
     private jakarta.persistence.EntityManager entityManager;
@@ -43,12 +44,37 @@ public class ManagerService {
             Long canceledOrders = orderRepository.countByStatus(OrderStatus.CANCELED);
             Long totalOrders = orderRepository.count();
             
-            // Calculate total revenue (simple sum of all DONE orders)
-            BigDecimal totalRevenue = BigDecimal.ZERO;
-            // TODO: Implement revenue calculation when needed
+            // Calculate total revenue from DONE orders only
+            String totalRevenueQuery = "SELECT COALESCE(SUM(o.finalPrice), 0) FROM Order o WHERE o.status = :status";
+            BigDecimal totalRevenue = entityManager.createQuery(totalRevenueQuery, BigDecimal.class)
+                .setParameter("status", OrderStatus.DONE)
+                .getSingleResult();
             
-            // Get top selling drinks (TODO: implement later)
+            // Get top selling drinks from DONE orders
+            String topDrinksQuery = """
+                SELECT oi.drinkNameSnapshot,
+                       SUM(oi.quantity) as totalQuantity,
+                       SUM(oi.itemPrice) as totalRevenue
+                FROM OrderItem oi
+                JOIN oi.order o
+                WHERE o.status = :status
+                GROUP BY oi.drinkNameSnapshot
+                ORDER BY SUM(oi.quantity) DESC
+                """;
+            
+            @SuppressWarnings("unchecked")
+            List<Object[]> topDrinksResults = entityManager.createQuery(topDrinksQuery)
+                .setParameter("status", OrderStatus.DONE)
+                .setMaxResults(5)
+                .getResultList();
+            
             List<DashboardSummaryDto.TopSellingDrinkDto> topSellingDrinks = new ArrayList<>();
+            for (Object[] row : topDrinksResults) {
+                String drinkName = (String) row[0];
+                Long totalSold = ((Number) row[1]).longValue();
+                BigDecimal revenue = (BigDecimal) row[2];
+                topSellingDrinks.add(new DashboardSummaryDto.TopSellingDrinkDto(drinkName, totalSold, revenue));
+            }
             
             DashboardSummaryDto summary = new DashboardSummaryDto();
             summary.setTotalRevenue(totalRevenue);
@@ -58,8 +84,8 @@ public class ManagerService {
             summary.setCanceledOrders(canceledOrders != null ? canceledOrders : 0L);
             summary.setTopSellingDrinks(topSellingDrinks);
             
-            log.info("Dashboard summary: revenue={}, total={}, pending={}", 
-                totalRevenue, totalOrders, pendingOrders);
+            log.info("Dashboard summary: revenue={}, total={}, pending={}, completed={}", 
+                totalRevenue, totalOrders, pendingOrders, completedOrders);
             
             return summary;
         } catch (Exception e) {
@@ -168,21 +194,24 @@ public class ManagerService {
         
         // Get daily revenues (last N days)
         if (days != null && days > 0) {
+            // Calculate cutoff date
+            java.time.Instant cutoffDate = java.time.Instant.now().minus(days, java.time.temporal.ChronoUnit.DAYS);
+            
             String dailyQuery = """
-                SELECT DATE(o.createdAt) as date, 
+                SELECT FUNCTION('DATE', o.createdAt) as date, 
                        COALESCE(SUM(o.finalPrice), 0) as revenue,
                        COUNT(o.id) as orderCount
                 FROM Order o 
                 WHERE o.status = :status 
-                  AND o.createdAt >= CURRENT_DATE - :days
-                GROUP BY DATE(o.createdAt)
-                ORDER BY DATE(o.createdAt) DESC
+                  AND o.createdAt >= :cutoffDate
+                GROUP BY FUNCTION('DATE', o.createdAt)
+                ORDER BY FUNCTION('DATE', o.createdAt) ASC
                 """;
             
             @SuppressWarnings("unchecked")
             List<Object[]> dailyResults = entityManager.createQuery(dailyQuery)
                 .setParameter("status", OrderStatus.DONE)
-                .setParameter("days", days)
+                .setParameter("cutoffDate", cutoffDate)
                 .getResultList();
             
             List<com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue> dailyRevenues = new ArrayList<>();
@@ -197,22 +226,25 @@ public class ManagerService {
         
         // Get monthly revenues (last N months)
         if (months != null && months > 0) {
+            // Calculate cutoff date (N months ago)
+            java.time.Instant cutoffDate = java.time.Instant.now().minus(months * 30L, java.time.temporal.ChronoUnit.DAYS);
+            
             String monthlyQuery = """
-                SELECT YEAR(o.createdAt) as year,
-                       MONTH(o.createdAt) as month,
+                SELECT FUNCTION('YEAR', o.createdAt) as year,
+                       FUNCTION('MONTH', o.createdAt) as month,
                        COALESCE(SUM(o.finalPrice), 0) as revenue,
                        COUNT(o.id) as orderCount
                 FROM Order o 
                 WHERE o.status = :status
-                  AND o.createdAt >= DATE_SUB(CURRENT_DATE, INTERVAL :months MONTH)
-                GROUP BY YEAR(o.createdAt), MONTH(o.createdAt)
-                ORDER BY YEAR(o.createdAt) DESC, MONTH(o.createdAt) DESC
+                  AND o.createdAt >= :cutoffDate
+                GROUP BY FUNCTION('YEAR', o.createdAt), FUNCTION('MONTH', o.createdAt)
+                ORDER BY FUNCTION('YEAR', o.createdAt) ASC, FUNCTION('MONTH', o.createdAt) ASC
                 """;
             
             @SuppressWarnings("unchecked")
             List<Object[]> monthlyResults = entityManager.createQuery(monthlyQuery)
                 .setParameter("status", OrderStatus.DONE)
-                .setParameter("months", months)
+                .setParameter("cutoffDate", cutoffDate)
                 .getResultList();
             
             List<com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue> monthlyRevenues = new ArrayList<>();
@@ -265,4 +297,25 @@ public class ManagerService {
         
         return stats;
     }
+    
+    // ==================== CATEGORY MANAGEMENT ====================
+    
+    @Transactional
+    public com.utetea.backend.dto.DrinkCategoryDto createCategory(com.utetea.backend.dto.DrinkCategoryDto dto) {
+        log.info("Creating category: {}", dto.getName());
+        return categoryService.createCategory(dto);
+    }
+    
+    @Transactional
+    public com.utetea.backend.dto.DrinkCategoryDto updateCategory(Long id, com.utetea.backend.dto.DrinkCategoryDto dto) {
+        log.info("Updating category {}: {}", id, dto.getName());
+        return categoryService.updateCategory(id, dto);
+    }
+    
+    @Transactional
+    public void deleteCategory(Long id) {
+        log.info("Deleting category: {}", id);
+        categoryService.deleteCategory(id);
+    }
+
 }

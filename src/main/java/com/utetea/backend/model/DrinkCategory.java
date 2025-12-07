@@ -17,6 +17,9 @@ public class DrinkCategory extends AuditEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
     
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+    
     @Column(name = "display_order")
     private Integer displayOrder = 0;
     

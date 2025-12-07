@@ -178,4 +178,56 @@ public class ManagerController {
         com.utetea.backend.dto.RevenueStatisticsDto stats = managerService.getRevenueStatistics(days, months);
         return ResponseEntity.ok(ApiResponse.success("Statistics loaded", stats));
     }
+    
+    // ==================== CATEGORY MANAGEMENT ====================
+    
+    @PostMapping("/categories")
+    @Operation(summary = "Create Category", description = "Tạo danh mục mới")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.DrinkCategoryDto>> createCategory(
+            @RequestBody java.util.Map<String, String> categoryData) {
+        
+        log.info("POST /api/manager/categories - name: {}", categoryData.get("name"));
+        
+        com.utetea.backend.dto.DrinkCategoryDto dto = new com.utetea.backend.dto.DrinkCategoryDto();
+        dto.setName(categoryData.get("name"));
+        dto.setDescription(categoryData.get("description"));
+        dto.setImageUrl(categoryData.get("imageUrl"));
+        dto.setIsActive(true);
+        dto.setDisplayOrder(0);
+        
+        com.utetea.backend.dto.DrinkCategoryDto created = managerService.createCategory(dto);
+        return ResponseEntity.ok(ApiResponse.success("Category created", created));
+    }
+    
+    @PutMapping("/categories/{id}")
+    @Operation(summary = "Update Category", description = "Cập nhật danh mục")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.DrinkCategoryDto>> updateCategory(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> categoryData) {
+        
+        log.info("PUT /api/manager/categories/{} - name: {}", id, categoryData.get("name"));
+        
+        com.utetea.backend.dto.DrinkCategoryDto dto = new com.utetea.backend.dto.DrinkCategoryDto();
+        dto.setName(categoryData.get("name"));
+        dto.setDescription(categoryData.get("description"));
+        dto.setImageUrl(categoryData.get("imageUrl"));
+        dto.setIsActive(true);
+        dto.setDisplayOrder(0);
+        
+        com.utetea.backend.dto.DrinkCategoryDto updated = managerService.updateCategory(id, dto);
+        return ResponseEntity.ok(ApiResponse.success("Category updated", updated));
+    }
+    
+    @DeleteMapping("/categories/{id}")
+    @Operation(summary = "Delete Category", description = "Xóa danh mục (soft delete)")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<String>> deleteCategory(@PathVariable Long id) {
+        log.info("DELETE /api/manager/categories/{}", id);
+        
+        managerService.deleteCategory(id);
+        return ResponseEntity.ok(ApiResponse.success("Category deleted"));
+    }
+
 }

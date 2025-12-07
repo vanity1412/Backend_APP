@@ -14,6 +14,7 @@ public class DrinkCategoryMapper {
                 .id(category.getId())
                 .name(category.getName())
                 .description(category.getDescription())
+                .imageUrl(category.getImageUrl())
                 .displayOrder(category.getDisplayOrder())
                 .isActive(category.getIsActive())
                 .build();
@@ -26,6 +27,7 @@ public class DrinkCategoryMapper {
         category.setId(dto.getId());
         category.setName(dto.getName());
         category.setDescription(dto.getDescription());
+        category.setImageUrl(dto.getImageUrl());
         category.setDisplayOrder(dto.getDisplayOrder());
         category.setIsActive(dto.getIsActive());
         

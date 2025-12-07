@@ -212,11 +212,16 @@ public class PromotionService {
         // Check if promotion is being used
         Integer usedCount = promotion.getUsedCount();
         if (usedCount != null && usedCount > 0) {
-            throw new BusinessException("Không thể xóa voucher đã được sử dụng. Hãy vô hiệu hóa thay vì xóa.");
+            // Voucher đã được sử dụng -> vô hiệu hóa thay vì xóa
+            log.info("Promotion {} has been used {} times, deactivating instead of deleting", id, usedCount);
+            promotion.setIsActive(false);
+            promotionRepository.save(promotion);
+            log.info("Promotion deactivated successfully with id: {}", id);
+        } else {
+            // Voucher chưa được sử dụng -> xóa hoàn toàn
+            promotionRepository.delete(promotion);
+            log.info("Promotion deleted successfully with id: {}", id);
         }
-        
-        promotionRepository.delete(promotion);
-        log.info("Promotion deleted successfully with id: {}", id);
     }
     
     @Transactional
