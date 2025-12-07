@@ -59,6 +59,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/promotions/**").permitAll()
                         .requestMatchers("/assets/**").permitAll()
                         
+                        // VNPAY endpoints
+                        .requestMatchers("/api/vnpay/callback").permitAll()
+                        .requestMatchers("/api/vnpay/test-config").permitAll()
+                        .requestMatchers("/api/vnpay/test-payment-url").permitAll()
+                        
                         // Manager test endpoint (for debugging)
                         .requestMatchers("/api/manager/test").permitAll()
                         
