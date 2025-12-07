@@ -10,14 +10,19 @@ import com.utetea.backend.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
+import lombok.extern.slf4j.Slf4j;
+
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -27,45 +32,45 @@ public class AuthService {
     private final UserDetailsService userDetailsService;
     private final OtpService otpService;
 
-    @Transactional
-    public LoginResponse register(RegisterRequest request) {
-        // Validate username uniqueness
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new BusinessException("Username already exists");
-        }
-        
-        // Validate phone uniqueness (if provided)
-        if (request.getPhone() != null && !request.getPhone().isEmpty() 
-            && userRepository.existsByPhone(request.getPhone())) {
-            throw new BusinessException("Phone already exists");
-        }
-        
-        // Validate email uniqueness (if provided)
-        if (request.getEmail() != null && !request.getEmail().isEmpty() 
-            && userRepository.existsByEmail(request.getEmail())) {
-            throw new BusinessException("Email already exists");
-        }
-
-        User user = new User();
-        user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail());
-        user.setPhone(request.getPhone());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setFullName(request.getFullName() != null ? request.getFullName() : request.getUsername());
-        user.setAddress(request.getAddress());
-        user.setRole(UserRole.USER);
-        user.setMemberTier(MemberTier.BRONZE);
-        user.setPoints(0);
-        user.setActive(true);
-        user.setIsBlocked(false);
-
-        user = userRepository.save(user);
-
-        UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-        String token = jwtUtil.generateToken(userDetails, user.getRole().name());
-
-        return mapToLoginResponse(user, token);
-    }
+//    @Transactional
+//    public LoginResponse register(RegisterRequest request) {
+//        // Validate username uniqueness
+//        if (userRepository.existsByUsername(request.getUsername())) {
+//            throw new BusinessException("Username already exists");
+//        }
+//
+//        // Validate phone uniqueness (if provided)
+//        if (request.getPhone() != null && !request.getPhone().isEmpty()
+//            && userRepository.existsByPhone(request.getPhone())) {
+//            throw new BusinessException("Phone already exists");
+//        }
+//
+//        // Validate email uniqueness (if provided)
+//        if (request.getEmail() != null && !request.getEmail().isEmpty()
+//            && userRepository.existsByEmail(request.getEmail())) {
+//            throw new BusinessException("Email already exists");
+//        }
+//
+//        User user = new User();
+//        user.setUsername(request.getUsername());
+//        user.setEmail(request.getEmail());
+//        user.setPhone(request.getPhone());
+//        user.setPassword(passwordEncoder.encode(request.getPassword()));
+//        user.setFullName(request.getFullName() != null ? request.getFullName() : request.getUsername());
+//        user.setAddress(request.getAddress());
+//        user.setRole(UserRole.USER);
+//        user.setMemberTier(MemberTier.BRONZE);
+//        user.setPoints(0);
+//        user.setActive(true);
+//        user.setIsBlocked(false);
+//
+//        user = userRepository.save(user);
+//
+//        UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
+//        String token = jwtUtil.generateToken(userDetails, user.getRole().name());
+//
+//        return mapToLoginResponse(user, token);
+//    }
 
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
@@ -99,9 +104,15 @@ public class AuthService {
         }
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-        String token = jwtUtil.generateToken(userDetails, user.getRole().name());
+        String accessToken = jwtUtil.generateToken(userDetails, user.getRole().name());
+        String refreshToken = jwtUtil.generateRefreshToken(userDetails); // TẠO REFRESH TOKEN
 
-        LoginResponse response = mapToLoginResponse(user, token);
+        System.out.println("Generated Access Token (first 20 chars): " + accessToken.substring(0, 20) + "...");
+        System.out.println("Generated Refresh Token (first 20 chars): " + refreshToken.substring(0, 20) + "...");
+
+
+        // 2. Cập nhật phương thức ánh xạ để nhận cả hai token
+        LoginResponse response = mapToLoginResponse(user, accessToken, refreshToken);
         System.out.println("Response created - Role: " + response.getRole());
         System.out.println("========== LOGIN SERVICE END ==========");
 
@@ -191,8 +202,9 @@ public class AuthService {
         // Generate token
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
         String token = jwtUtil.generateToken(userDetails, user.getRole().name());
+        String refreshToken = jwtUtil.generateRefreshToken(userDetails);
 
-        return mapToLoginResponse(user, token);
+        return mapToLoginResponse(user, token, refreshToken);
     }
 
     @Transactional
@@ -315,7 +327,90 @@ public class AuthService {
         System.out.println("========== RESET PASSWORD END ==========");
     }
 
-    private LoginResponse mapToLoginResponse(User user, String token) {
+    private UserDetails convertUserToUserDetails(User user) {
+        if (user == null) {
+            return null;
+        }
+
+        // Tái tạo logic builder từ CustomUserDetailsService
+        return org.springframework.security.core.userdetails.User.builder()
+                .username(user.getUsername())
+                .password(user.getPassword())
+                .authorities(Collections.singletonList(
+                        new SimpleGrantedAuthority("ROLE_" + user.getRole().name())
+                ))
+                .accountExpired(false)
+                .accountLocked(user.getIsBlocked()) // Sử dụng trường isBlocked
+                .credentialsExpired(false)
+                .disabled(!user.getActive()) // Sử dụng trường active
+                .build();
+    }
+
+    @Transactional
+    public JwtResponse refreshAccessToken(String oldRefreshToken) {
+        log.info("Starting token refresh process.");
+
+        // 1. Xác thực Refresh Token
+        if (!jwtUtil.validateRefreshToken(oldRefreshToken)) {
+            log.warn("Validation failed: Refresh token is invalid or expired.");
+            throw new BusinessException("Invalid or expired refresh token");
+        }
+        log.debug("Refresh Token validated successfully.");
+
+        // 2. Lấy tên người dùng từ token
+        String username = null;
+        try {
+            username = jwtUtil.extractUsernameFromRefreshToken(oldRefreshToken);
+            log.info("Extracted username from token: {}", username);
+        } catch (Exception e) {
+            log.error("Error extracting username from token: {}", e.getMessage(), e);
+            throw new BusinessException("Failed to extract username from token.");
+        }
+
+        String finalUsername = username;
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> {
+                    log.error("User not found in DB for username: {}", finalUsername);
+                    return new BusinessException("User not found: " + finalUsername);
+                });
+        log.debug("User found in database: {}", user.getId());
+
+        // Kiểm tra trạng thái hoạt động (Quan trọng cho bảo mật)
+        if (!user.getActive()) {
+            log.warn("User is inactive: {}", username);
+            throw new BusinessException("User is inactive.");
+        }
+        log.debug("User is active.");
+
+        // Chuyển đổi User Entity sang UserDetails
+        UserDetails userDetails = convertUserToUserDetails(user);
+        if (userDetails == null) {
+            log.error("Failed to convert User Entity to UserDetails for: {}", username);
+            throw new BusinessException("Internal error: Could not process user details.");
+        }
+        String role = user.getRole().name();
+        log.debug("User details converted. Role: {}", role);
+
+        // 3. Tạo Access Token và Refresh Token mới
+        // Sử dụng phương thức gốc nhận UserDetails và role
+        String newAccessToken = jwtUtil.generateToken(userDetails, role);
+        String newRefreshToken = jwtUtil.generateRefreshToken(userDetails);
+
+        log.info("New Access Token and Refresh Token generated.");
+        log.debug("New Access Token (first 20 chars): {}", newAccessToken.substring(0, 20) + "...");
+        log.debug("New Refresh Token (first 20 chars): {}", newRefreshToken.substring(0, 20) + "...");
+
+
+        // 4. Trả về kết quả
+        log.info("Token refresh process completed successfully for user: {}", username);
+        return JwtResponse.builder()
+                .token(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .expiresIn(jwtUtil.getAccessTokenExpirationTime())
+                .build();
+    }
+
+    private LoginResponse mapToLoginResponse(User user, String token, String refreshToken) {
         LoginResponse response = new LoginResponse();
         response.setId(user.getId());
         response.setUsername(user.getUsername());
@@ -325,6 +420,7 @@ public class AuthService {
         response.setRole(user.getRole());
         response.setMemberTier(user.getMemberTier());
         response.setToken(token);
+        response.setRefreshToken(refreshToken);
         response.setAvatarUrl(user.getAvatarUrl());
 
         System.out.println("========== MAP TO LOGIN RESPONSE ==========");

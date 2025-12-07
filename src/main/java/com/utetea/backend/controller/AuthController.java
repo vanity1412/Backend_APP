@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import lombok.extern.slf4j.Slf4j;
@@ -26,13 +27,13 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success("Auth service is running"));
     }
     
-    @PostMapping("/register")
-    @Operation(summary = "Đăng ký tài khoản", description = "Tạo tài khoản USER mới với username, phone, password")
-    public ResponseEntity<ApiResponse<LoginResponse>> register(@Valid @RequestBody RegisterRequest request) {
-
-        LoginResponse response = authService.register(request);
-        return ResponseEntity.ok(ApiResponse.success("Registration successful", response));
-    }
+//    @PostMapping("/register")
+//    @Operation(summary = "Đăng ký tài khoản", description = "Tạo tài khoản USER mới với username, phone, password")
+//    public ResponseEntity<ApiResponse<LoginResponse>> register(@Valid @RequestBody RegisterRequest request) {
+//
+//        LoginResponse response = authService.register(request);
+//        return ResponseEntity.ok(ApiResponse.success("Registration successful", response));
+//    }
 
     @PostMapping("/register-with-otp")
     @Operation(summary = "Đăng ký với OTP", description = "Bước 1: Đăng ký và gửi OTP qua email")
@@ -104,6 +105,17 @@ public class AuthController {
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
         authService.resetPassword(request);
         return ResponseEntity.ok("Đặt lại mật khẩu thành công.");
+    }
+
+    @PostMapping("/refresh-token")
+    public ResponseEntity<ApiResponse<JwtResponse>> refreshToken(@RequestBody RefreshTokenRequest request) {
+        try {
+            // Giả định AuthService của bạn có phương thức này
+            JwtResponse response = authService.refreshAccessToken(request.getRefreshToken());
+            return ResponseEntity.ok(ApiResponse.success("Token refreshed successfully", response));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(e.getMessage()));
+        }
     }
 
 }
