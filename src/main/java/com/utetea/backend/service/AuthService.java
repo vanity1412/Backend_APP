@@ -48,7 +48,7 @@ public class AuthService {
 
         User user = new User();
         user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail()); // FIX BUG: Trước đây set email = phone
+        user.setEmail(request.getEmail());
         user.setPhone(request.getPhone());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setFullName(request.getFullName() != null ? request.getFullName() : request.getUsername());
@@ -325,12 +325,14 @@ public class AuthService {
         response.setRole(user.getRole());
         response.setMemberTier(user.getMemberTier());
         response.setToken(token);
+        response.setAvatarUrl(user.getAvatarUrl());
 
         System.out.println("========== MAP TO LOGIN RESPONSE ==========");
         System.out.println("User Role (enum): " + user.getRole());
         System.out.println("User Role (name): " + user.getRole().name());
         System.out.println("Response Role: " + response.getRole());
         System.out.println("Response Role (name): " + response.getRole().name());
+        System.out.println("Response Url (name): " + response.getAvatarUrl());
         System.out.println("==========================================");
 
         return response;

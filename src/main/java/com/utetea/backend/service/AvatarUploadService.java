@@ -29,7 +29,7 @@ public class AvatarUploadService {
         String fileName = "user_" + userId + "_" + System.currentTimeMillis() + extension;
 
         // 2. Đường dẫn API GitHub
-        String apiUrl = "https://api.github.com/repos/vanity1412/UTEtea-img/contents/main/" + fileName;
+        String apiUrl = "https://api.github.com/repos/xinloihuy/git_test/contents/assets/users/avatar/" + fileName;
 
         // 3. Chuẩn bị Body request (JSON)
         Map<String, String> body = new HashMap<>();
@@ -52,7 +52,7 @@ public class AvatarUploadService {
 
             // 6. Trả về link Raw để lưu vào DB
             // Link dạng: https://raw.githubusercontent.com/USER/REPO/BRANCH/PATH/FILENAME
-            return String.format("https://raw.githubusercontent.com/vanity1412/UTEtea-img/main/assets/users/avatar/%s", fileName);
+            return String.format("https://raw.githubusercontent.com/xinloihuy/git_test/main/assets/users/avatar/%s", fileName);
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi upload ảnh lên GitHub: " + e.getMessage());

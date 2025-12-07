@@ -21,4 +21,7 @@ public class LoginResponse {
     private MemberTier memberTier;
     
     private String token;
+
+    @JsonProperty("avatarUrl")
+    private String avatarUrl;
 }
