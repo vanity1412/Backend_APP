@@ -31,6 +31,7 @@ public class OrderService {
     private final DrinkSizeRepository drinkSizeRepository;
     private final DrinkToppingRepository drinkToppingRepository;
     private final PromotionRepository promotionRepository;
+    private final EmailService emailService;
     
     @Transactional
     public OrderDto createOrder(String username, OrderRequest request) {
@@ -205,6 +206,16 @@ public class OrderService {
         
         order = orderRepository.save(order);
         log.info("Order created successfully with id: {}, final price: {}", order.getId(), order.getFinalPrice());
+        
+        // Send order confirmation email
+        try {
+            emailService.sendOrderConfirmationEmail(order);
+            log.info("Order confirmation email sent for order {}", order.getId());
+        } catch (Exception e) {
+            log.error("Failed to send order confirmation email for order {}", order.getId(), e);
+            // Don't throw exception, just log the error
+        }
+        
         return mapToDto(order);
     }
     
@@ -247,6 +258,17 @@ public class OrderService {
         
         order.setStatus(newStatus);
         order = orderRepository.save(order);
+        
+        // Send email notification when order is completed
+        if (newStatus == OrderStatus.DONE) {
+            try {
+                emailService.sendOrderCompletionEmail(order);
+                log.info("Order completion email sent for order {}", orderId);
+            } catch (Exception e) {
+                log.error("Failed to send order completion email for order {}", orderId, e);
+                // Don't throw exception, just log the error
+            }
+        }
         
         log.info("Order {} status updated successfully", orderId);
         return mapToDto(order);
