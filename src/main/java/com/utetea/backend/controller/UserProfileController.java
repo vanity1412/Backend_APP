@@ -77,4 +77,22 @@ public class UserProfileController {
         userProfileService.changePassword(userDetails.getUsername(), request);
         return ResponseEntity.ok("Đổi mật khẩu thành công");
     }
+
+    @DeleteMapping
+    public ResponseEntity<ApiResponse<?>> deleteAccount(Authentication authentication) {
+        try {
+            String username = authentication.getName();
+
+            // GỌI SERVICE ĐỂ XÓA TÀI KHOẢN
+            userProfileService.deleteAccount(username);
+
+            // Lưu ý: Sau khi xóa, bạn có thể cần invalidation session/token,
+            // nhưng phản hồi ban đầu thường là 200 OK hoặc 204 No Content.
+            return ResponseEntity.ok(ApiResponse.success("Account deleted successfully"));
+
+        } catch (Exception e) {
+            // Xử lý các ngoại lệ (ví dụ: User not found)
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
 }

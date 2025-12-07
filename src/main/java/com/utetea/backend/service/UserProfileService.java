@@ -6,6 +6,7 @@ import com.utetea.backend.exception.BusinessException;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.User;
 import com.utetea.backend.repository.UserRepository;
+import com.utetea.backend.repository.CartRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 public class UserProfileService {
 
     private final UserRepository userRepository;
+    private final CartRepository cartRepository;
     private final AvatarUploadService avatarUploadService;
     private final PasswordEncoder passwordEncoder;
 
@@ -93,6 +95,23 @@ public class UserProfileService {
         // Mã hóa mật khẩu mới và lưu xuống DB
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+    }
+
+    @Transactional
+    public void deleteAccount(String username) {
+        // Tìm người dùng
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException("User not found"));
+
+        // Thực hiện xóa cart trước để không xung đột khóa ngoại
+        cartRepository.deleteByUserId(user.getId());
+
+        // Thực hiện xóa
+        userRepository.delete(user);
+
+        // Tùy chọn: Nếu muốn khóa thay vì xóa vĩnh viễn:
+        // user.setIsBlocked(true);
+        // userRepository.save(user);
     }
 
     private UserProfileDto mapToProfileDto(User user) {
