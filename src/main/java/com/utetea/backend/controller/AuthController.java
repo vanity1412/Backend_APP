@@ -110,7 +110,6 @@ public class AuthController {
     @PostMapping("/refresh-token")
     public ResponseEntity<ApiResponse<JwtResponse>> refreshToken(@RequestBody RefreshTokenRequest request) {
         try {
-            // Giả định AuthService của bạn có phương thức này
             JwtResponse response = authService.refreshAccessToken(request.getRefreshToken());
             return ResponseEntity.ok(ApiResponse.success("Token refreshed successfully", response));
         } catch (Exception e) {

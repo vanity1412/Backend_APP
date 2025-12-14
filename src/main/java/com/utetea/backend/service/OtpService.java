@@ -39,16 +39,27 @@ public class OtpService {
         log.info("Preparing to send OTP email to: {}", email);
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom("watershoputetea@gmail.com");
+            message.setFrom("UTE Tea <watershoputetea@gmail.com>");
             message.setTo(email);
-            message.setSubject("UTE Tea - Mã OTP xác thực tài khoản");
+            message.setSubject("[UTE Tea] Mã OTP xác thực tài khoản");
             message.setText(
                     "Xin chào,\n\n" +
-                            "Mã OTP của bạn là: " + otp + "\n\n" +
-                            "Mã này có hiệu lực trong " + OTP_VALIDITY_MINUTES + " phút.\n\n" +
-                            "Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email này.\n\n" +
+
+                            "Chúng tôi đã nhận được yêu cầu xác thực tài khoản của bạn tại UTE Tea.\n\n" +
+
+                            "----------------------------------------\n" +
+                            "MÃ OTP CỦA BẠN:  " + otp + "\n" +
+                            "----------------------------------------\n\n" +
+
+                            "⏳ Mã OTP có hiệu lực trong " + OTP_VALIDITY_MINUTES + " phút.\n" +
+                            "🔒 Vui lòng không chia sẻ mã này cho bất kỳ ai.\n\n" +
+
+                            "Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email hoặc liên hệ với chúng tôi để được hỗ trợ.\n\n" +
+
                             "Trân trọng,\n" +
-                            "UTE Tea Team"
+                            "UTE Tea Team\n" +
+                            "----------------------------------------\n" +
+                            "Email hỗ trợ: watershoputetea@gmail.com"
             );
 
             mailSender.send(message);
