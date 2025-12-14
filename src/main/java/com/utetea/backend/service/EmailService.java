@@ -127,7 +127,7 @@ public class EmailService {
             }
             
             content.append("<p>Số lượng: ").append(item.getQuantity()).append(" x ");
-            content.append(formatPrice(item.getItemPrice().divide(BigDecimal.valueOf(item.getQuantity()))));
+            content.append(formatPrice(item.getItemPrice().divide(BigDecimal.valueOf(item.getQuantity()), 0, java.math.RoundingMode.HALF_UP)));
             content.append(" = <strong>").append(formatPrice(item.getItemPrice())).append("</strong></p>");
             content.append("</div>");
         }
@@ -149,7 +149,7 @@ public class EmailService {
         content.append("</div>");
         
         // Thank you message
-        content.append("<div class='thank-you'>");
+        content.append("<div class='thank-you' style='background-color: #fff3cd; padding: 15px; margin: 15px 0; border-left: 4px solid #FF9800; border-radius: 5px;'>");
         content.append("<p style='margin: 0;'><strong>💝 Cảm ơn bạn đã tin tưởng và lựa chọn UTE Tea!</strong></p>");
         content.append("<p style='margin: 5px 0 0 0;'>Chúng tôi sẽ chuẩn bị đơn hàng của bạn một cách tốt nhất. Hẹn gặp lại bạn!</p>");
         content.append("</div>");
@@ -244,7 +244,7 @@ public class EmailService {
             }
             
             content.append("<p>Số lượng: ").append(item.getQuantity()).append(" x ");
-            content.append(formatPrice(item.getItemPrice().divide(BigDecimal.valueOf(item.getQuantity()))));
+            content.append(formatPrice(item.getItemPrice().divide(BigDecimal.valueOf(item.getQuantity()), 0, java.math.RoundingMode.HALF_UP)));
             content.append(" = <strong>").append(formatPrice(item.getItemPrice())).append("</strong></p>");
             content.append("</div>");
         }
@@ -266,7 +266,7 @@ public class EmailService {
         content.append("</div>");
         
         // Thank you message
-        content.append("<div class='thank-you'>");
+        content.append("<div class='thank-you' style='background-color: #fff3cd; padding: 15px; margin: 15px 0; border-left: 4px solid #4CAF50; border-radius: 5px;'>");
         content.append("<p style='margin: 0;'><strong>💝 Cảm ơn bạn đã sử dụng dịch vụ của UTE Tea!</strong></p>");
         content.append("<p style='margin: 5px 0 0 0;'>Hy vọng bạn hài lòng với sản phẩm và dịch vụ của chúng tôi. Hẹn gặp lại bạn lần sau!</p>");
         content.append("</div>");
