@@ -117,12 +117,18 @@ public class OrderService {
             }
             // Nếu sizes rỗng, drink không có size options, bỏ qua validation
             
-            // Add toppings
+            // Add toppings - FIX High #7: Validate topping thuộc về drink
             if (itemReq.getToppingIds() != null && !itemReq.getToppingIds().isEmpty()) {
                 List<OrderItemTopping> toppings = new ArrayList<>();
                 for (Long toppingId : itemReq.getToppingIds()) {
-                    DrinkTopping topping = drinkToppingRepository.findById(toppingId)
+                    // FIX: Sử dụng findByIdWithDrink để fetch drink cùng lúc
+                    DrinkTopping topping = drinkToppingRepository.findByIdWithDrink(toppingId)
                         .orElseThrow(() -> new ResourceNotFoundException("Topping", "id", toppingId));
+                    
+                    // Validate topping thuộc về drink này hoặc là topping chung (drink = null)
+                    if (topping.getDrink() != null && !topping.getDrink().getId().equals(drink.getId())) {
+                        throw new BusinessException("Topping '" + topping.getToppingName() + "' không thuộc về drink '" + drink.getName() + "'");
+                    }
                     
                     if (!topping.getIsActive()) {
                         throw new BusinessException("Topping '" + topping.getToppingName() + "' is not available");
@@ -149,10 +155,11 @@ public class OrderService {
         order.setItems(items);
         order.setTotalPrice(totalPrice);
         
-        // Apply promotion
+        // Apply promotion - FIX Critical #1, #2: Sử dụng pessimistic locking để tránh race condition
         BigDecimal discount = BigDecimal.ZERO;
         if (request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
-            Promotion promotion = promotionRepository.findByCode(request.getPromotionCode())
+            // Sử dụng findByCodeForUpdate với PESSIMISTIC_WRITE lock để đảm bảo atomic operation
+            Promotion promotion = promotionRepository.findByCodeForUpdate(request.getPromotionCode())
                 .orElseThrow(() -> new BusinessException("Mã voucher không hợp lệ"));
             
             LocalDateTime now = LocalDateTime.now();
@@ -168,7 +175,7 @@ public class OrderService {
                 throw new BusinessException("Mã voucher đã hết hạn");
             }
             
-            // Check usage limit
+            // Check usage limit - với pessimistic lock, check này giờ đã atomic
             if (promotion.getUsageLimit() != null && 
                 promotion.getUsedCount() >= promotion.getUsageLimit()) {
                 throw new BusinessException("Mã voucher đã hết lượt sử dụng");
@@ -193,7 +200,7 @@ public class OrderService {
                 discount = promotion.getDiscountValue();
             }
             
-            // Increment usage count
+            // Increment usage count - atomic với pessimistic lock
             promotion.setUsedCount(promotion.getUsedCount() + 1);
             promotionRepository.save(promotion);
             

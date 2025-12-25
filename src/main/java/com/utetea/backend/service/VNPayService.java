@@ -48,8 +48,11 @@ public class VNPayService {
         vnpParams.put("vnp_ReturnUrl", vnPayConfig.getReturnUrl());
         vnpParams.put("vnp_IpAddr", "127.0.0.1");
         
-        Calendar cld = Calendar.getInstance(TimeZone.getTimeZone("Etc/GMT+7"));
+        // FIX Medium #10: Sử dụng Asia/Ho_Chi_Minh thay vì Etc/GMT+7 (GMT+7 thực ra là UTC-7!)
+        TimeZone vnTimeZone = TimeZone.getTimeZone("Asia/Ho_Chi_Minh");
+        Calendar cld = Calendar.getInstance(vnTimeZone);
         SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMddHHmmss");
+        formatter.setTimeZone(vnTimeZone);
         String vnpCreateDate = formatter.format(cld.getTime());
         vnpParams.put("vnp_CreateDate", vnpCreateDate);
         
@@ -126,8 +129,11 @@ public class VNPayService {
         }
         vnpParams.put("vnp_IpAddr", ipAddr);
         
-        Calendar cld = Calendar.getInstance(TimeZone.getTimeZone("Etc/GMT+7"));
+        // FIX Medium #10: Sử dụng Asia/Ho_Chi_Minh thay vì Etc/GMT+7 (GMT+7 thực ra là UTC-7!)
+        TimeZone vnTimeZone = TimeZone.getTimeZone("Asia/Ho_Chi_Minh");
+        Calendar cld = Calendar.getInstance(vnTimeZone);
         SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMddHHmmss");
+        formatter.setTimeZone(vnTimeZone);
         String vnpCreateDate = formatter.format(cld.getTime());
         vnpParams.put("vnp_CreateDate", vnpCreateDate);
         
@@ -215,12 +221,22 @@ public class VNPayService {
                     Long id = Long.parseLong(orderIdStr);
                     
                     Order order = orderRepository.findById(id).orElse(null);
-                    if (order != null && "00".equals(responseCode)) {
-                        // Payment successful
-                        log.info("Payment successful for order: {}", id);
-                        return true;
+                    if (order != null) {
+                        if ("00".equals(responseCode)) {
+                            // FIX Critical #3: Payment successful - update order status to MAKING
+                            order.setStatus(OrderStatus.MAKING);
+                            orderRepository.save(order);
+                            log.info("Payment successful for order: {}. Status updated to MAKING", id);
+                            return true;
+                        } else {
+                            // Payment failed - keep order as PENDING or mark as CANCELED
+                            log.warn("Payment failed for order: {}. ResponseCode: {}", id, responseCode);
+                            // Optionally cancel the order if payment failed
+                            // order.setStatus(OrderStatus.CANCELED);
+                            // orderRepository.save(order);
+                        }
                     } else {
-                        log.warn("Payment failed or order not found. Order: {}, ResponseCode: {}", id, responseCode);
+                        log.warn("Order not found: {}", id);
                     }
                 } catch (Exception e) {
                     log.error("Error parsing order ID from callback", e);

@@ -74,8 +74,9 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
-        System.out.println("========== LOGIN SERVICE START ==========");
-        System.out.println("Login attempt for: " + request.getUsernameOrPhone());
+        // FIX Low #16: Replaced System.out.println with proper logging
+        log.debug("========== LOGIN SERVICE START ==========");
+        log.debug("Login attempt for: {}", request.getUsernameOrPhone());
 
         // Authenticate with Spring Security
         authenticationManager.authenticate(
@@ -90,10 +91,9 @@ public class AuthService {
                 request.getUsernameOrPhone()
         ).orElseThrow(() -> new BusinessException("Invalid credentials"));
 
-        System.out.println("User found - ID: " + user.getId());
-        System.out.println("User found - Username: " + user.getUsername());
-        System.out.println("User found - Role: " + user.getRole());
-        System.out.println("User found - Role.name(): " + user.getRole().name());
+        log.debug("User found - ID: {}", user.getId());
+        log.debug("User found - Username: {}", user.getUsername());
+        log.debug("User found - Role: {}", user.getRole());
 
         if (user.getIsBlocked()) {
             throw new BusinessException("Account is blocked");
@@ -105,37 +105,34 @@ public class AuthService {
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
         String accessToken = jwtUtil.generateToken(userDetails, user.getRole().name());
-        String refreshToken = jwtUtil.generateRefreshToken(userDetails); // TẠO REFRESH TOKEN
+        String refreshToken = jwtUtil.generateRefreshToken(userDetails);
 
-        System.out.println("Generated Access Token (first 20 chars): " + accessToken.substring(0, 20) + "...");
-        System.out.println("Generated Refresh Token (first 20 chars): " + refreshToken.substring(0, 20) + "...");
+        log.debug("Tokens generated successfully for user: {}", user.getUsername());
 
-
-        // 2. Cập nhật phương thức ánh xạ để nhận cả hai token
         LoginResponse response = mapToLoginResponse(user, accessToken, refreshToken);
-        System.out.println("Response created - Role: " + response.getRole());
-        System.out.println("========== LOGIN SERVICE END ==========");
+        log.debug("========== LOGIN SERVICE END ==========");
 
         return response;
     }
 
     @Transactional
     public void registerWithOtp(RegisterRequest request) {
-        System.out.println("================== START REGISTER WITH OTP ==================");
-        System.out.println("Request - Username: " + request.getUsername());
-        System.out.println("Request - Phone: " + request.getPhone());
-        System.out.println("Request - Email: " + request.getEmail());
+        // FIX Low #16: Replaced System.out.println with proper logging
+        log.debug("================== START REGISTER WITH OTP ==================");
+        log.debug("Request - Username: {}", request.getUsername());
+        log.debug("Request - Phone: {}", request.getPhone());
+        log.debug("Request - Email: {}", request.getEmail());
 
         if (userRepository.existsByUsername(request.getUsername())) {
-            System.out.println("ERROR: Username already exists");
+            log.warn("Registration failed: Username already exists - {}", request.getUsername());
             throw new BusinessException("Username already exists");
         }
         if (request.getEmail() != null && !request.getEmail().isEmpty() && userRepository.existsByEmail(request.getEmail())) {
-            System.out.println("ERROR: Email already exists");
+            log.warn("Registration failed: Email already exists - {}", request.getEmail());
             throw new BusinessException("Email already exists");
         }
 
-        System.out.println("Validation passed, creating user...");
+        log.debug("Validation passed, creating user...");
 
         User user = new User();
         user.setUsername(request.getUsername());
@@ -154,32 +151,27 @@ public class AuthService {
         user.setOtp(otp);
         user.setOtpExpiry(java.time.LocalDateTime.now().plusMinutes(5)); // Set thời hạn 5 phút
 
-        System.out.println("User object created, saving to database...");
+        log.debug("User object created, saving to database...");
         user = userRepository.save(user);
-        System.out.println("User saved! User ID: " + user.getId());
-        System.out.println("User in DB - Username: " + user.getUsername());
-        System.out.println("User in DB - Phone: " + user.getPhone());
-        System.out.println("User in DB - Email: " + user.getEmail());
-        System.out.println("User in DB - Active: " + user.getActive());
-        System.out.println("User in DB - OTP before send: " + user.getOtp());
+        log.debug("User saved! User ID: {}", user.getId());
+        log.debug("User in DB - Username: {}, Active: {}", user.getUsername(), user.getActive());
 
         String email = request.getEmail();
         if (email == null || email.isEmpty()) {
-            System.out.println("ERROR: Email is null or empty");
+            log.error("Email is null or empty for user: {}", request.getUsername());
             throw new BusinessException("Email is required for OTP registration");
         }
 
-        System.out.println("Calling otpService.sendOtp()...");
+        log.debug("Calling otpService.sendOtp()...");
         try {
             otpService.sendOtp(otp, email);
-            System.out.println("otpService.sendOtp() completed successfully!");
+            log.info("OTP sent successfully to: {}", email);
         } catch (Exception e) {
-            System.err.println("ERROR in otpService.sendOtp(): " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error in otpService.sendOtp(): {}", e.getMessage(), e);
             throw e;
         }
 
-        System.out.println("================== END REGISTER WITH OTP ==================");
+        log.debug("================== END REGISTER WITH OTP ==================");
     }
 
     @Transactional
@@ -263,7 +255,8 @@ public class AuthService {
 
     @Transactional
     public void initiateForgotPassword(ForgotPasswordRequest request) {
-        System.out.println("========== FORGOT PASSWORD START ==========");
+        // FIX Low #16: Replaced System.out.println with proper logging
+        log.debug("========== FORGOT PASSWORD START ==========");
 
         // Tìm user theo Email
         User user = userRepository.findByEmail(request.getEmail())
@@ -279,20 +272,22 @@ public class AuthService {
         userRepository.save(user);
 
         // Gửi Email
-        System.out.println("Sending Reset Password OTP to: " + user.getEmail());
+        log.debug("Sending Reset Password OTP to: {}", user.getEmail());
         try {
-            // Giả sử otpService của bạn gửi được qua email
             otpService.sendOtp(otp, user.getEmail());
+            log.info("Reset password OTP sent to: {}", user.getEmail());
         } catch (Exception e) {
+            log.error("Error sending reset password email: {}", e.getMessage());
             throw new BusinessException("Lỗi khi gửi email: " + e.getMessage());
         }
-        System.out.println("========== FORGOT PASSWORD END ==========");
+        log.debug("========== FORGOT PASSWORD END ==========");
     }
 
     // 2. Xác nhận OTP và đặt lại mật khẩu
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
-        System.out.println("========== RESET PASSWORD START ==========");
+        // FIX Low #16: Replaced System.out.println with proper logging
+        log.debug("========== RESET PASSWORD START ==========");
 
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new BusinessException("User not found"));
@@ -323,8 +318,8 @@ public class AuthService {
         }
 
         userRepository.save(user);
-        System.out.println("Password reset successfully for: " + user.getUsername());
-        System.out.println("========== RESET PASSWORD END ==========");
+        log.info("Password reset successfully for user: {}", user.getUsername());
+        log.debug("========== RESET PASSWORD END ==========");
     }
 
     private UserDetails convertUserToUserDetails(User user) {
@@ -423,13 +418,10 @@ public class AuthService {
         response.setRefreshToken(refreshToken);
         response.setAvatarUrl(user.getAvatarUrl());
 
-        System.out.println("========== MAP TO LOGIN RESPONSE ==========");
-        System.out.println("User Role (enum): " + user.getRole());
-        System.out.println("User Role (name): " + user.getRole().name());
-        System.out.println("Response Role: " + response.getRole());
-        System.out.println("Response Role (name): " + response.getRole().name());
-        System.out.println("Response Url (name): " + response.getAvatarUrl());
-        System.out.println("==========================================");
+        // FIX Low #16: Replaced System.out.println with proper logging
+        log.debug("========== MAP TO LOGIN RESPONSE ==========");
+        log.debug("User Role: {}, Response Role: {}", user.getRole(), response.getRole());
+        log.debug("==========================================");
 
         return response;
     }

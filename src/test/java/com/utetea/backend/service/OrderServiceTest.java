@@ -96,15 +96,16 @@ class OrderServiceTest {
         testTopping.setPrice(new BigDecimal("7000"));
         testTopping.setIsActive(true);
         
-        // Setup test promotion
+        // Setup test promotion - FIX Low #20: Sử dụng fixed dates để tránh flaky test
         testPromotion = new Promotion();
         testPromotion.setId(1L);
         testPromotion.setCode("TEST20");
         testPromotion.setDiscountType(DiscountType.PERCENT);
         testPromotion.setDiscountValue(new BigDecimal("20"));
         testPromotion.setMinOrderValue(new BigDecimal("50000"));
-        testPromotion.setStartDate(LocalDateTime.now().minusDays(1));
-        testPromotion.setEndDate(LocalDateTime.now().plusDays(30));
+        // Sử dụng khoảng thời gian rộng để test không bị flaky
+        testPromotion.setStartDate(LocalDateTime.of(2020, 1, 1, 0, 0));
+        testPromotion.setEndDate(LocalDateTime.of(2030, 12, 31, 23, 59));
         testPromotion.setIsActive(true);
     }
     
@@ -242,7 +243,7 @@ class OrderServiceTest {
         when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
         when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
         when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
-        when(promotionRepository.findByCode("TEST20")).thenReturn(Optional.of(testPromotion));
+        when(promotionRepository.findByCodeForUpdate("TEST20")).thenReturn(Optional.of(testPromotion));
         
         Order savedOrder = createMockOrder();
         savedOrder.setPromotion(testPromotion);
@@ -269,7 +270,7 @@ class OrderServiceTest {
         when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
         when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
         when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
-        when(promotionRepository.findByCode("INVALID")).thenReturn(Optional.empty());
+        when(promotionRepository.findByCodeForUpdate("INVALID")).thenReturn(Optional.empty());
         
         // Act & Assert
         assertThrows(BusinessException.class, () -> {
@@ -279,8 +280,8 @@ class OrderServiceTest {
     
     @Test
     void createOrder_ExpiredPromotion_ThrowsException() {
-        // Arrange
-        testPromotion.setEndDate(LocalDateTime.now().minusDays(1));
+        // Arrange - FIX Low #20: Sử dụng fixed past date
+        testPromotion.setEndDate(LocalDateTime.of(2020, 1, 1, 0, 0)); // Đã hết hạn
         OrderRequest request = createValidOrderRequest();
         request.setPromotionCode("TEST20");
         
@@ -288,7 +289,7 @@ class OrderServiceTest {
         when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
         when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
         when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
-        when(promotionRepository.findByCode("TEST20")).thenReturn(Optional.of(testPromotion));
+        when(promotionRepository.findByCodeForUpdate("TEST20")).thenReturn(Optional.of(testPromotion));
         
         // Act & Assert
         assertThrows(BusinessException.class, () -> {
@@ -307,7 +308,7 @@ class OrderServiceTest {
         when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
         when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
         when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
-        when(promotionRepository.findByCode("TEST20")).thenReturn(Optional.of(testPromotion));
+        when(promotionRepository.findByCodeForUpdate("TEST20")).thenReturn(Optional.of(testPromotion));
         
         // Act & Assert
         assertThrows(BusinessException.class, () -> {
@@ -419,6 +420,67 @@ class OrderServiceTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.size());
+    }
+    
+    // FIX Medium #13: Thêm test cases cho topping validation
+    @Test
+    void createOrder_WithInactiveTopping_ThrowsException() {
+        // Arrange
+        testTopping.setIsActive(false);
+        OrderRequest request = createValidOrderRequest();
+        request.getItems().get(0).setToppingIds(List.of(1L));
+        
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
+        when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
+        when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
+        when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
+        when(drinkToppingRepository.findById(1L)).thenReturn(Optional.of(testTopping));
+        
+        // Act & Assert
+        assertThrows(BusinessException.class, () -> {
+            orderService.createOrder("testuser", request);
+        });
+    }
+    
+    @Test
+    void createOrder_WithToppingNotBelongingToDrink_ThrowsException() {
+        // Arrange
+        Drink anotherDrink = new Drink();
+        anotherDrink.setId(2L);
+        anotherDrink.setName("Another Drink");
+        testTopping.setDrink(anotherDrink); // Topping thuộc drink khác
+        
+        OrderRequest request = createValidOrderRequest();
+        request.getItems().get(0).setToppingIds(List.of(1L));
+        
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
+        when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
+        when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
+        when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
+        when(drinkToppingRepository.findById(1L)).thenReturn(Optional.of(testTopping));
+        
+        // Act & Assert
+        assertThrows(BusinessException.class, () -> {
+            orderService.createOrder("testuser", request);
+        });
+    }
+    
+    @Test
+    void createOrder_WithToppingNotFound_ThrowsException() {
+        // Arrange
+        OrderRequest request = createValidOrderRequest();
+        request.getItems().get(0).setToppingIds(List.of(999L)); // Non-existent topping
+        
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
+        when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
+        when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
+        when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
+        when(drinkToppingRepository.findById(999L)).thenReturn(Optional.empty());
+        
+        // Act & Assert
+        assertThrows(ResourceNotFoundException.class, () -> {
+            orderService.createOrder("testuser", request);
+        });
     }
     
     // Helper methods

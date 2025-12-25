@@ -106,15 +106,16 @@ class OrderIntegrationTest {
         testTopping.setIsActive(true);
         testTopping = drinkToppingRepository.save(testTopping);
         
-        // Create test promotion
+        // Create test promotion - FIX Low #20: Sử dụng fixed dates để tránh flaky test
         testPromotion = new Promotion();
         testPromotion.setCode("TEST20");
         testPromotion.setDescription("Test Promotion");
         testPromotion.setDiscountType(DiscountType.PERCENT);
         testPromotion.setDiscountValue(new BigDecimal("20"));
         testPromotion.setMinOrderValue(new BigDecimal("25000"));
-        testPromotion.setStartDate(LocalDateTime.now().minusDays(1));
-        testPromotion.setEndDate(LocalDateTime.now().plusDays(30));
+        // Sử dụng khoảng thời gian rộng để test không bị flaky
+        testPromotion.setStartDate(LocalDateTime.of(2020, 1, 1, 0, 0));
+        testPromotion.setEndDate(LocalDateTime.of(2030, 12, 31, 23, 59));
         testPromotion.setIsActive(true);
         testPromotion = promotionRepository.save(testPromotion);
     }

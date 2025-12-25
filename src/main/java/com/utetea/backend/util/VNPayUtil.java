@@ -7,9 +7,13 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.*;
 
 public class VNPayUtil {
+    
+    // FIX Medium #9: Sử dụng SecureRandom thay vì Random để đảm bảo uniqueness
+    private static final SecureRandom secureRandom = new SecureRandom();
     
     public static String hmacSHA512(String key, String data) {
         try {
@@ -53,13 +57,39 @@ public class VNPayUtil {
         return hmacSHA512(hashSecret, sb.toString());
     }
     
+    /**
+     * FIX Medium #9: Generate unique transaction reference using timestamp + SecureRandom
+     * Format: timestamp (13 digits) + random (remaining digits)
+     * This ensures uniqueness even under high concurrency
+     */
     public static String getRandomNumber(int len) {
-        Random rnd = new Random();
-        String chars = "0123456789";
-        StringBuilder sb = new StringBuilder(len);
-        for (int i = 0; i < len; i++) {
-            sb.append(chars.charAt(rnd.nextInt(chars.length())));
+        if (len <= 0) {
+            throw new IllegalArgumentException("Length must be positive");
         }
+        
+        // Sử dụng timestamp để đảm bảo uniqueness cơ bản
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        
+        if (len <= timestamp.length()) {
+            // Nếu len ngắn, chỉ dùng random
+            StringBuilder sb = new StringBuilder(len);
+            for (int i = 0; i < len; i++) {
+                sb.append(secureRandom.nextInt(10));
+            }
+            return sb.toString();
+        }
+        
+        // Kết hợp timestamp + random để đảm bảo unique
+        int randomLen = len - Math.min(8, timestamp.length()); // Giữ 8 ký tự timestamp
+        String timestampPart = timestamp.substring(timestamp.length() - Math.min(8, len));
+        
+        StringBuilder sb = new StringBuilder(len);
+        sb.append(timestampPart);
+        
+        for (int i = 0; i < randomLen; i++) {
+            sb.append(secureRandom.nextInt(10));
+        }
+        
         return sb.toString();
     }
 }

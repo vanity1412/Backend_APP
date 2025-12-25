@@ -6,6 +6,11 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * FIX Medium #12: Sử dụng JUnit assertions thay vì Java assert keyword
+ */
 public class VNPayHashTest {
     
     @Test
@@ -33,7 +38,8 @@ public class VNPayHashTest {
         System.out.println("Hash length: " + hash.length());
         
         // Hash phải có độ dài 128 ký tự (SHA512 = 512 bits = 64 bytes = 128 hex chars)
-        assert hash.length() == 128 : "Hash length should be 128";
+        assertEquals(128, hash.length(), "Hash length should be 128");
+        assertFalse(hash.isEmpty(), "Hash should not be empty");
     }
     
     @Test
@@ -46,7 +52,19 @@ public class VNPayHashTest {
         System.out.println("HMAC SHA512: " + hash);
         System.out.println("Length: " + hash.length());
         
-        assert !hash.isEmpty() : "Hash should not be empty";
-        assert hash.length() == 128 : "Hash length should be 128";
+        assertFalse(hash.isEmpty(), "Hash should not be empty");
+        assertEquals(128, hash.length(), "Hash length should be 128");
+    }
+    
+    @Test
+    public void testGetRandomNumber() {
+        // Test uniqueness
+        String random1 = VNPayUtil.getRandomNumber(8);
+        String random2 = VNPayUtil.getRandomNumber(8);
+        
+        assertEquals(8, random1.length(), "Random number should have correct length");
+        assertEquals(8, random2.length(), "Random number should have correct length");
+        // Note: There's a very small chance these could be equal, but extremely unlikely
+        assertNotEquals(random1, random2, "Two random numbers should be different");
     }
 }

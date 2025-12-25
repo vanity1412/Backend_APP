@@ -6,16 +6,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
 import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
+/**
+ * FIX High #5: Removed hardcoded default JWT secret
+ * Secret MUST be configured via environment variable and be at least 256 bits (32 characters)
+ */
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret:utetea-secret-key-for-jwt-token-generation-minimum-256-bits}")
+    @Value("${jwt.secret:}")
     private String secret;
 
     @Value("${jwt.expiration:86400000}") // 24 hours (Access Token)
@@ -25,6 +30,15 @@ public class JwtUtil {
     @Value("${jwt.refresh.expiration:604800000}") // 7 days (Refresh Token)
     private Long refreshExpiration;
 
+    @PostConstruct
+    public void validateConfig() {
+        if (secret == null || secret.isEmpty()) {
+            throw new IllegalStateException("JWT secret must be configured via jwt.secret property");
+        }
+        if (secret.length() < 32) {
+            throw new IllegalStateException("JWT secret must be at least 32 characters (256 bits) for HS256");
+        }
+    }
 
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes());

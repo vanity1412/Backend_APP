@@ -21,4 +21,8 @@ public interface DrinkToppingRepository extends JpaRepository<DrinkTopping, Long
     // Batch load toppings cho nhiều drinks (FIX N+1)
     @Query("SELECT t FROM DrinkTopping t WHERE t.drink.id IN :drinkIds AND t.isActive = true")
     List<DrinkTopping> findByDrinkIdInAndIsActiveTrue(@Param("drinkIds") List<Long> drinkIds);
+    
+    // FIX: Fetch topping với drink để tránh LazyInitializationException
+    @Query("SELECT t FROM DrinkTopping t LEFT JOIN FETCH t.drink WHERE t.id = :id")
+    java.util.Optional<DrinkTopping> findByIdWithDrink(@Param("id") Long id);
 }

@@ -4,14 +4,20 @@ import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
+import jakarta.annotation.PostConstruct;
+
+/**
+ * FIX High #4: Removed hardcoded default values for sensitive credentials
+ * These MUST be configured via environment variables or application.properties
+ */
 @Configuration
 @Getter
 public class VNPayConfig {
     
-    @Value("${vnpay.tmn-code:GRPOHLK1}")
+    @Value("${vnpay.tmn-code:}")
     private String tmnCode;
     
-    @Value("${vnpay.hash-secret:CYOVRAR3RXF4FAZNW6Z8ZT4FSPJAH08H}")
+    @Value("${vnpay.hash-secret:}")
     private String hashSecret;
     
     @Value("${vnpay.url:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}")
@@ -28,4 +34,14 @@ public class VNPayConfig {
     
     @Value("${vnpay.order-type:other}")
     private String orderType;
+    
+    @PostConstruct
+    public void validateConfig() {
+        if (tmnCode == null || tmnCode.isEmpty()) {
+            throw new IllegalStateException("VNPay tmnCode must be configured via vnpay.tmn-code property");
+        }
+        if (hashSecret == null || hashSecret.isEmpty()) {
+            throw new IllegalStateException("VNPay hashSecret must be configured via vnpay.hash-secret property");
+        }
+    }
 }
