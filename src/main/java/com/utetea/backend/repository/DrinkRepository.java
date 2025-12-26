@@ -18,6 +18,9 @@ public interface DrinkRepository extends JpaRepository<Drink, Long> {
     
     List<Drink> findByCategoryIdAndIsActiveTrue(Long categoryId);
     
+    // For chatbot - search by name containing keyword
+    List<Drink> findByNameContainingIgnoreCaseAndIsActiveTrue(String name);
+    
     @Query("SELECT d FROM Drink d WHERE d.isActive = true AND LOWER(d.name) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     List<Drink> searchByName(@Param("keyword") String keyword);
     

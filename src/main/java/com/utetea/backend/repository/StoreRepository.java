@@ -12,4 +12,6 @@ import java.util.List;
 public interface StoreRepository extends JpaRepository<Store, Long> {
     @Query("SELECT s FROM Store s WHERE LOWER(s.storeName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     List<Store> searchStores(@Param("keyword") String keyword);
+    
+    List<Store> findAll();
 }

@@ -23,6 +23,9 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     @Query("SELECT p FROM Promotion p WHERE p.isActive = true AND p.startDate <= :now AND p.endDate >= :now")
     List<Promotion> findActivePromotions(@Param("now") LocalDateTime now);
     
+    // For chatbot - find active promotions within date range
+    List<Promotion> findByIsActiveTrueAndStartDateBeforeAndEndDateAfter(LocalDateTime startDate, LocalDateTime endDate);
+    
     /**
      * FIX Critical #1, #2: Pessimistic locking để tránh race condition khi update usedCount
      * Đảm bảo atomic read-check-update cho promotion usage

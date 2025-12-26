@@ -57,6 +57,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/stores/**").permitAll()
                         .requestMatchers("/api/categories/**").permitAll()
                         .requestMatchers("/api/promotions/**").permitAll()
+                        .requestMatchers("/api/chatbot/**").permitAll()
                         .requestMatchers("/assets/**").permitAll()
                         
                         // VNPAY endpoints
