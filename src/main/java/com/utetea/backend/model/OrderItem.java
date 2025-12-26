@@ -5,8 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
 @Entity @Table(name = "order_items")
@@ -35,6 +35,7 @@ public class OrderItem extends AuditEntity {
     @Column(length = 255)
     private String note;
     
+    // FIX MultipleBagFetchException: Đổi List thành Set
     @OneToMany(mappedBy = "orderItem", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<OrderItemTopping> toppings = new ArrayList<>();
+    private Set<OrderItemTopping> toppings = new HashSet<>();
 }

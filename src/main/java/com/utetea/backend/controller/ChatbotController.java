@@ -4,6 +4,7 @@ import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.ChatRequest;
 import com.utetea.backend.dto.ChatResponse;
 import com.utetea.backend.service.ChatbotService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +19,7 @@ public class ChatbotController {
     private final ChatbotService chatbotService;
 
     @PostMapping("/message")
-    public ResponseEntity<ApiResponse<ChatResponse>> sendMessage(@RequestBody ChatRequest request) {
+    public ResponseEntity<ApiResponse<ChatResponse>> sendMessage(@Valid @RequestBody ChatRequest request) {
         try {
             log.info("Chatbot request: {}", request.getMessage());
             ChatResponse response = chatbotService.processMessage(request.getMessage(), request.getUserId());

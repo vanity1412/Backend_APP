@@ -72,7 +72,8 @@ public class ReviewService {
     }
     
     public List<ReviewDto> getReviewsByDrink(Long drinkId) {
-        return reviewRepository.findByDrinkIdOrderByCreatedAtDesc(drinkId)
+        // FIX N+1 Query: Sử dụng JOIN FETCH để load User và Drink trong 1 query
+        return reviewRepository.findByDrinkIdWithUserAndDrink(drinkId)
                 .stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());

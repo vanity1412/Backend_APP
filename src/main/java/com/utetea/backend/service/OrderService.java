@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -74,7 +76,7 @@ public class OrderService {
         order.setPaymentMethod(request.getPaymentMethod());
         
         BigDecimal totalPrice = BigDecimal.ZERO;
-        List<OrderItem> items = new ArrayList<>();
+        Set<OrderItem> items = new HashSet<>();
         
         // Validate items not empty
         if (request.getItems() == null || request.getItems().isEmpty()) {
@@ -128,7 +130,7 @@ public class OrderService {
             
             // Add toppings - FIX High #7: Validate topping thuộc về drink
             if (itemReq.getToppingIds() != null && !itemReq.getToppingIds().isEmpty()) {
-                List<OrderItemTopping> toppings = new ArrayList<>();
+                Set<OrderItemTopping> toppings = new HashSet<>();
                 for (Long toppingId : itemReq.getToppingIds()) {
                     // FIX: Sử dụng findByIdWithDrink để fetch drink cùng lúc
                     DrinkTopping topping = drinkToppingRepository.findByIdWithDrink(toppingId)
@@ -255,7 +257,8 @@ public class OrderService {
     
     @Transactional(readOnly = true)
     public List<OrderDto> getUserOrders(Long userId) {
-        return orderRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+        // FIX Performance: Sử dụng JOIN FETCH để tránh N+1 query
+        return orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId).stream()
             .map(this::mapToDto)
             .collect(Collectors.toList());
     }
@@ -269,7 +272,8 @@ public class OrderService {
     
     @Transactional(readOnly = true)
     public OrderDto getOrderById(Long orderId) {
-        Order order = orderRepository.findById(orderId)
+        // FIX Performance: Sử dụng JOIN FETCH để tránh N+1 query
+        Order order = orderRepository.findByIdWithItems(orderId)
             .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
         return mapToDto(order);
     }
@@ -386,6 +390,10 @@ public class OrderService {
         OrderItemDto dto = new OrderItemDto();
         dto.setId(item.getId());
         dto.setDrinkName(item.getDrinkNameSnapshot());
+        // FIX: Thêm drinkImage từ Drink entity
+        if (item.getDrink() != null) {
+            dto.setDrinkImage(item.getDrink().getImageUrl());
+        }
         dto.setSizeName(item.getSizeNameSnapshot());
         dto.setQuantity(item.getQuantity());
         dto.setItemPrice(item.getItemPrice());

@@ -16,6 +16,14 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     
     List<Review> findByDrinkIdOrderByCreatedAtDesc(Long drinkId);
     
+    // FIX N+1 Query: Load reviews với User và Drink trong 1 query
+    @Query("SELECT r FROM Review r " +
+           "LEFT JOIN FETCH r.user " +
+           "LEFT JOIN FETCH r.drink " +
+           "WHERE r.drink.id = :drinkId " +
+           "ORDER BY r.createdAt DESC")
+    List<Review> findByDrinkIdWithUserAndDrink(@Param("drinkId") Long drinkId);
+    
     Page<Review> findByDrinkId(Long drinkId, Pageable pageable);
     
     List<Review> findByUserId(Long userId);

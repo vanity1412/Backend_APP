@@ -11,11 +11,33 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByUserIdOrderByCreatedAtDesc(Long userId);
     Page<Order> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
+    
+    // FIX Performance: JOIN FETCH để tránh N+1 query khi load orders với items
+    @Query("SELECT DISTINCT o FROM Order o " +
+           "LEFT JOIN FETCH o.user " +
+           "LEFT JOIN FETCH o.store " +
+           "LEFT JOIN FETCH o.items i " +
+           "LEFT JOIN FETCH i.drink " +
+           "LEFT JOIN FETCH i.toppings " +
+           "WHERE o.user.id = :userId " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByUserIdWithItemsOrderByCreatedAtDesc(@Param("userId") Long userId);
+    
+    // FIX Performance: JOIN FETCH cho single order
+    @Query("SELECT o FROM Order o " +
+           "LEFT JOIN FETCH o.user " +
+           "LEFT JOIN FETCH o.store " +
+           "LEFT JOIN FETCH o.items i " +
+           "LEFT JOIN FETCH i.drink " +
+           "LEFT JOIN FETCH i.toppings " +
+           "WHERE o.id = :orderId")
+    Optional<Order> findByIdWithItems(@Param("orderId") Long orderId);
     
     List<Order> findByUserIdAndStatusNotOrderByCreatedAtDesc(Long userId, OrderStatus status);
     

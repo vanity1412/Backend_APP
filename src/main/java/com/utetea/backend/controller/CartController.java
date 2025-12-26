@@ -9,6 +9,7 @@ import com.utetea.backend.repository.UserRepository;
 import com.utetea.backend.service.CartService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +53,7 @@ public class CartController {
     @Operation(summary = "Thêm sản phẩm vào giỏ hàng")
     public ResponseEntity<ApiResponse<CartDto>> addToCart(
             Authentication authentication,
-            @RequestBody AddToCartRequest request) {
+            @Valid @RequestBody AddToCartRequest request) {
         User user = getAuthenticatedUser(authentication);
         log.info("Adding to cart: userId={}, drinkId={}", user.getId(), request.getDrinkId());
         CartDto cart = cartService.addToCart(user.getId(), request);

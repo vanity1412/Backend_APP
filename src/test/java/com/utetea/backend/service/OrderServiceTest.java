@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -372,7 +373,7 @@ class OrderServiceTest {
     void getOrderById_Success() {
         // Arrange
         Order order = createMockOrder();
-        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithItems(1L)).thenReturn(Optional.of(order));
         
         // Act
         OrderDto result = orderService.getOrderById(1L);
@@ -385,7 +386,7 @@ class OrderServiceTest {
     @Test
     void getOrderById_NotFound_ThrowsException() {
         // Arrange
-        when(orderRepository.findById(1L)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdWithItems(1L)).thenReturn(Optional.empty());
         
         // Act & Assert
         assertThrows(ResourceNotFoundException.class, () -> {
@@ -397,7 +398,7 @@ class OrderServiceTest {
     void getUserOrders_Success() {
         // Arrange
         List<Order> orders = List.of(createMockOrder());
-        when(orderRepository.findByUserIdOrderByCreatedAtDesc(1L)).thenReturn(orders);
+        when(orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(1L)).thenReturn(orders);
         
         // Act
         List<OrderDto> result = orderService.getUserOrders(1L);
@@ -581,7 +582,7 @@ class OrderServiceTest {
         order.setDiscount(BigDecimal.ZERO);
         order.setFinalPrice(new BigDecimal("30000"));
         order.setPaymentMethod(PaymentMethod.COD);
-        order.setItems(new ArrayList<>());
+        order.setItems(new HashSet<>());
         return order;
     }
 }

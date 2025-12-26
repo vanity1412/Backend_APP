@@ -5,6 +5,7 @@ import com.utetea.backend.dto.VNPayPaymentRequest;
 import com.utetea.backend.dto.VNPayPaymentResponse;
 import com.utetea.backend.service.VNPayService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -27,7 +28,7 @@ public class VNPayController {
     @PostMapping("/create-payment")
     @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
     public ResponseEntity<ApiResponse<VNPayPaymentResponse>> createPayment(
-            @RequestBody VNPayPaymentRequest request,
+            @Valid @RequestBody VNPayPaymentRequest request,
             HttpServletRequest httpRequest) {
         try {
             String ipAddress = getIpAddress(httpRequest);

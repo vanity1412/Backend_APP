@@ -9,6 +9,7 @@ import java.util.List;
 public class OrderItemDto {
     private Long id;
     private String drinkName;
+    private String drinkImage; // FIX: Thêm trường ảnh sản phẩm
     private String sizeName;
     private Integer quantity;
     private BigDecimal itemPrice;

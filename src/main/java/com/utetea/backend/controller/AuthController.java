@@ -95,20 +95,20 @@ public class AuthController {
     }
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         authService.initiateForgotPassword(request);
         return ResponseEntity.ok("Mã xác nhận đã được gửi đến email của bạn.");
     }
 
     // API Đặt lại mật khẩu cho user quên mật khẩu
     @PostMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         authService.resetPassword(request);
         return ResponseEntity.ok("Đặt lại mật khẩu thành công.");
     }
 
     @PostMapping("/refresh-token")
-    public ResponseEntity<ApiResponse<JwtResponse>> refreshToken(@RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<ApiResponse<JwtResponse>> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
         try {
             JwtResponse response = authService.refreshAccessToken(request.getRefreshToken());
             return ResponseEntity.ok(ApiResponse.success("Token refreshed successfully", response));

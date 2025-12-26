@@ -6,6 +6,7 @@ import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.*;
 import com.utetea.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,10 +21,14 @@ public class LoyaltyService {
     private final UserRepository userRepository;
     private final SpinRewardRepository spinRewardRepository;
     
-    private static final int POINTS_TO_SPIN = 5;
+    @Value("${loyalty.points-to-spin:5}")
+    private int pointsToSpin;
+    
+    @Value("${loyalty.voucher-length:10}")
+    private int voucherLength;
+    
     private static final List<Integer> WHEEL_ITEMS = Arrays.asList(0, 10, 20, 50, 100);
     private static final String VOUCHER_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final int VOUCHER_LENGTH = 10;
     
     /**
      * Lấy thông tin điểm của user
@@ -40,8 +45,8 @@ public class LoyaltyService {
         
         return UserPointsDto.builder()
                 .currentPoints(user.getPoints())
-                .pointsToSpin(POINTS_TO_SPIN)
-                .canSpin(user.getPoints() >= POINTS_TO_SPIN)
+                .pointsToSpin(pointsToSpin)
+                .canSpin(user.getPoints() >= pointsToSpin)
                 .availableRewards(rewards)
                 .build();
     }
@@ -68,8 +73,8 @@ public class LoyaltyService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         
-        if (user.getPoints() < POINTS_TO_SPIN) {
-            throw new BadRequestException("Không đủ điểm để quay. Cần " + POINTS_TO_SPIN + " điểm.");
+        if (user.getPoints() < pointsToSpin) {
+            throw new BadRequestException("Không đủ điểm để quay. Cần " + pointsToSpin + " điểm.");
         }
         
         // Random vị trí trúng (0-4) với tỷ lệ khác nhau
@@ -77,7 +82,7 @@ public class LoyaltyService {
         int discountPercent = WHEEL_ITEMS.get(winIndex);
         
         // Trừ điểm
-        user.setPoints(user.getPoints() - POINTS_TO_SPIN);
+        user.setPoints(user.getPoints() - pointsToSpin);
         userRepository.save(user);
         
         // Tạo mã voucher 10 ký tự
@@ -88,7 +93,7 @@ public class LoyaltyService {
         reward.setUser(user);
         reward.setVoucherCode(voucherCode);
         reward.setDiscountPercent(discountPercent);
-        reward.setPointsUsed(POINTS_TO_SPIN);
+        reward.setPointsUsed(pointsToSpin);
         reward.setIsUsed(discountPercent == 0); // 0% đánh dấu đã dùng luôn
         reward = spinRewardRepository.save(reward);
         
@@ -115,15 +120,15 @@ public class LoyaltyService {
     }
     
     /**
-     * Tạo mã voucher unique 10 ký tự
+     * Tạo mã voucher unique
      */
     private String generateUniqueVoucherCode() {
         SecureRandom random = new SecureRandom();
         String code;
         int attempts = 0;
         do {
-            StringBuilder sb = new StringBuilder(VOUCHER_LENGTH);
-            for (int i = 0; i < VOUCHER_LENGTH; i++) {
+            StringBuilder sb = new StringBuilder(voucherLength);
+            for (int i = 0; i < voucherLength; i++) {
                 sb.append(VOUCHER_CHARS.charAt(random.nextInt(VOUCHER_CHARS.length())));
             }
             code = sb.toString();

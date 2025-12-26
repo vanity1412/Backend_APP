@@ -3,6 +3,7 @@ package com.utetea.backend.controller;
 import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.DrinkCategoryDto;
 import com.utetea.backend.service.DrinkCategoryService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +25,7 @@ public class AdminCategoryController {
     }
     
     @PostMapping
-    public ResponseEntity<ApiResponse<DrinkCategoryDto>> createCategory(@RequestBody DrinkCategoryDto dto) {
+    public ResponseEntity<ApiResponse<DrinkCategoryDto>> createCategory(@Valid @RequestBody DrinkCategoryDto dto) {
         try {
             DrinkCategoryDto created = categoryService.createCategory(dto);
             return ResponseEntity.ok(ApiResponse.success(created));
@@ -36,7 +37,7 @@ public class AdminCategoryController {
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<DrinkCategoryDto>> updateCategory(
             @PathVariable Long id, 
-            @RequestBody DrinkCategoryDto dto) {
+            @Valid @RequestBody DrinkCategoryDto dto) {
         try {
             DrinkCategoryDto updated = categoryService.updateCategory(id, dto);
             return ResponseEntity.ok(ApiResponse.success(updated));

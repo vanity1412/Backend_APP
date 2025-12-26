@@ -89,7 +89,21 @@ public class DrinkService {
     
     @Transactional(readOnly = true)
     public List<DrinkDto> searchDrinks(String keyword) {
-        List<Drink> drinks = drinkRepository.searchByNameWithSizesAndCategory(keyword);
+        // Input sanitization: validate and clean keyword
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return List.of();
+        }
+        
+        // Sanitize: remove special characters, keep Vietnamese characters
+        String sanitized = keyword.replaceAll("[^a-zA-Z0-9\\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]", "");
+        if (sanitized.length() > 100) {
+            sanitized = sanitized.substring(0, 100);
+        }
+        if (sanitized.trim().isEmpty()) {
+            return List.of();
+        }
+        
+        List<Drink> drinks = drinkRepository.searchByNameWithSizesAndCategory(sanitized);
         
         if (drinks.isEmpty()) {
             return List.of();
