@@ -133,6 +133,55 @@ public class ChatbotService {
         "phàn nàn", "complaint", "góp ý", "feedback", "không hài lòng", "tệ", "dở",
         "chán", "không ngon", "đánh giá"
     );
+    
+    // ==================== MOOD PATTERNS ====================
+    
+    // Hỏi tâm trạng
+    private static final List<String> MOOD_ASK_PATTERNS = Arrays.asList(
+        "hôm nay thế nào", "cảm thấy", "tâm trạng", "mood", "feeling", "bạn thế nào",
+        "hôm nay sao", "đang buồn", "đang vui", "đang mệt", "thấy sao"
+    );
+    
+    // Mệt mỏi / Stress
+    private static final List<String> MOOD_TIRED_PATTERNS = Arrays.asList(
+        "mệt", "tired", "stress", "căng thẳng", "áp lực", "kiệt sức", "uể oải",
+        "buồn ngủ", "sleepy", "exhausted", "mệt mỏi", "chán nản", "không có năng lượng"
+    );
+    
+    // Vui vẻ / Hạnh phúc
+    private static final List<String> MOOD_HAPPY_PATTERNS = Arrays.asList(
+        "vui", "happy", "hạnh phúc", "phấn khởi", "excited", "tuyệt vời", "great",
+        "good", "tốt", "khỏe", "fine", "ok", "ổn", "hào hứng", "sung sướng"
+    );
+    
+    // Buồn / Chán
+    private static final List<String> MOOD_SAD_PATTERNS = Arrays.asList(
+        "buồn", "sad", "chán", "bored", "lonely", "cô đơn", "tệ", "bad", "down",
+        "không vui", "thất vọng", "disappointed", "depressed", "u sầu"
+    );
+    
+    // Nóng / Thời tiết
+    private static final List<String> MOOD_HOT_PATTERNS = Arrays.asList(
+        "nóng", "hot", "nắng", "sunny", "oi bức", "nóng quá", "trời nóng",
+        "hè", "summer", "khát", "thirsty", "cần mát"
+    );
+    
+    // Lạnh
+    private static final List<String> MOOD_COLD_PATTERNS = Arrays.asList(
+        "lạnh", "cold", "rét", "se lạnh", "mùa đông", "winter", "ấm", "warm"
+    );
+    
+    // Cần năng lượng / Tỉnh táo
+    private static final List<String> MOOD_ENERGY_PATTERNS = Arrays.asList(
+        "cần năng lượng", "energy", "tỉnh táo", "awake", "focus", "tập trung",
+        "làm việc", "học bài", "study", "work", "cần tỉnh", "buồn ngủ quá"
+    );
+    
+    // Thư giãn
+    private static final List<String> MOOD_RELAX_PATTERNS = Arrays.asList(
+        "thư giãn", "relax", "chill", "nghỉ ngơi", "rest", "nhẹ nhàng", "calm",
+        "bình tĩnh", "peaceful", "yên bình"
+    );
 
     // ==================== MAIN PROCESS ====================
     
@@ -140,6 +189,39 @@ public class ChatbotService {
         String lowerMessage = normalizeVietnamese(message.toLowerCase().trim());
         
         // Priority-based intent detection
+        
+        // 0. MOOD-BASED RECOMMENDATION (ưu tiên cao)
+        if (containsAny(lowerMessage, MOOD_ASK_PATTERNS)) {
+            return handleMoodAsk();
+        }
+        
+        if (containsAny(lowerMessage, MOOD_TIRED_PATTERNS)) {
+            return handleMoodTired();
+        }
+        
+        if (containsAny(lowerMessage, MOOD_HAPPY_PATTERNS)) {
+            return handleMoodHappy();
+        }
+        
+        if (containsAny(lowerMessage, MOOD_SAD_PATTERNS)) {
+            return handleMoodSad();
+        }
+        
+        if (containsAny(lowerMessage, MOOD_HOT_PATTERNS)) {
+            return handleMoodHot();
+        }
+        
+        if (containsAny(lowerMessage, MOOD_COLD_PATTERNS)) {
+            return handleMoodCold();
+        }
+        
+        if (containsAny(lowerMessage, MOOD_ENERGY_PATTERNS)) {
+            return handleMoodEnergy();
+        }
+        
+        if (containsAny(lowerMessage, MOOD_RELAX_PATTERNS)) {
+            return handleMoodRelax();
+        }
         
         // 1. Chào hỏi
         if (containsAny(lowerMessage, GREETING_PATTERNS)) {
@@ -302,10 +384,340 @@ public class ChatbotService {
                 "• \"Xem đơn hàng của tôi\"\n\n" +
                 "⭐ **Gợi ý:**\n" +
                 "• \"Món nào ngon?\" hoặc \"gợi ý đi\"\n\n" +
+                "😊 **Gợi ý theo tâm trạng:**\n" +
+                "• \"Hôm nay mệt quá\" → Đồ uống nhẹ nhàng\n" +
+                "• \"Đang vui\" → Món ngọt ngào\n" +
+                "• \"Trời nóng quá\" → Đồ mát lạnh\n\n" +
                 "Hãy thử hỏi tôi bất cứ điều gì! 😊")
             .type("TEXT")
             .build();
     }
+    
+    // ==================== MOOD HANDLERS ====================
+    
+    private ChatResponse handleMoodAsk() {
+        return ChatResponse.builder()
+            .message("💭 **Hôm nay bạn cảm thấy thế nào?**\n\n" +
+                "Hãy cho tôi biết tâm trạng của bạn, tôi sẽ gợi ý đồ uống phù hợp nhé!\n\n" +
+                "😴 **Mệt mỏi** → Trà xanh, ít đường\n" +
+                "😊 **Vui vẻ** → Trà sữa topping đầy đủ\n" +
+                "😢 **Buồn** → Đồ ngọt an ủi\n" +
+                "🥵 **Nóng** → Đá xay, sinh tố mát lạnh\n" +
+                "🥶 **Lạnh** → Đồ nóng ấm áp\n" +
+                "⚡ **Cần năng lượng** → Cà phê đậm đà\n" +
+                "😌 **Thư giãn** → Trà hoa, trà thảo mộc\n\n" +
+                "Gõ tâm trạng của bạn nhé! 💚")
+            .type("TEXT")
+            .build();
+    }
+    
+    private ChatResponse handleMoodTired() {
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        // Lọc đồ uống phù hợp: trà xanh, trà thảo mộc, ít đường
+        List<Drink> recommended = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                return name.contains("trà xanh") || name.contains("trà hoa") || 
+                       name.contains("matcha") || name.contains("thảo mộc") ||
+                       name.contains("detox") || name.contains("green tea");
+            })
+            .limit(5)
+            .collect(Collectors.toList());
+        
+        // Nếu không có, lấy random
+        if (recommended.isEmpty()) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("😴 **Tôi hiểu bạn đang mệt...**\n\n");
+        sb.append("Khi mệt mỏi, bạn nên uống đồ nhẹ nhàng, ít đường để cơ thể dễ hấp thu!\n\n");
+        sb.append("🍵 **Gợi ý cho bạn:**\n\n");
+        
+        for (Drink d : recommended) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 **Tip:** Chọn size nhỏ, ít đường hoặc không đường nhé!\n");
+        sb.append("Nghỉ ngơi nhiều và uống đủ nước nha! 💚");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    private ChatResponse handleMoodHappy() {
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        // Lọc đồ uống vui vẻ: trà sữa, topping nhiều, vị ngọt
+        List<Drink> recommended = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                return name.contains("trà sữa") || name.contains("milk tea") || 
+                       name.contains("trân châu") || name.contains("topping") ||
+                       name.contains("cheese") || name.contains("kem");
+            })
+            .limit(5)
+            .collect(Collectors.toList());
+        
+        if (recommended.isEmpty()) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("🎉 **Tuyệt vời! Bạn đang vui!**\n\n");
+        sb.append("Hãy thưởng cho mình một ly đồ uống ngon lành nhé!\n\n");
+        sb.append("🧋 **Gợi ý cho ngày vui:**\n\n");
+        
+        for (Drink d : recommended) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 **Tip:** Thêm topping trân châu, pudding cho đã! 🎊\n");
+        sb.append("Chúc bạn luôn vui vẻ! 💚");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    private ChatResponse handleMoodSad() {
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        // Đồ ngọt an ủi
+        List<Drink> recommended = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                return name.contains("chocolate") || name.contains("socola") || 
+                       name.contains("caramel") || name.contains("kem") ||
+                       name.contains("sữa") || name.contains("matcha");
+            })
+            .limit(5)
+            .collect(Collectors.toList());
+        
+        if (recommended.isEmpty()) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("🤗 **Ôi, bạn đang buồn à?**\n\n");
+        sb.append("Đừng lo, một ly đồ uống ngọt ngào sẽ giúp bạn cảm thấy tốt hơn!\n\n");
+        sb.append("🍫 **Gợi ý an ủi:**\n\n");
+        
+        for (Drink d : recommended) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 **Tip:** Chocolate và đồ ngọt giúp tăng endorphin - hormone hạnh phúc!\n");
+        sb.append("Mọi chuyện rồi sẽ ổn thôi! 💚🌈");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    private ChatResponse handleMoodHot() {
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        // Đồ mát lạnh
+        List<Drink> recommended = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                return name.contains("đá") || name.contains("ice") || 
+                       name.contains("sinh tố") || name.contains("smoothie") ||
+                       name.contains("freeze") || name.contains("lạnh") ||
+                       name.contains("chanh") || name.contains("dừa");
+            })
+            .limit(5)
+            .collect(Collectors.toList());
+        
+        if (recommended.isEmpty()) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("🥵 **Trời nóng quá phải không!**\n\n");
+        sb.append("Để tôi gợi ý những món mát lạnh giải nhiệt cho bạn!\n\n");
+        sb.append("🧊 **Đồ uống giải nhiệt:**\n\n");
+        
+        for (Drink d : recommended) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 **Tip:** Chọn size lớn, thêm đá để mát hơn!\n");
+        sb.append("Giữ mát và uống đủ nước nhé! 🧊💚");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    private ChatResponse handleMoodCold() {
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        // Đồ nóng ấm
+        List<Drink> recommended = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                return name.contains("nóng") || name.contains("hot") || 
+                       name.contains("ấm") || name.contains("warm") ||
+                       name.contains("cà phê") || name.contains("coffee") ||
+                       name.contains("trà") && !name.contains("đá");
+            })
+            .limit(5)
+            .collect(Collectors.toList());
+        
+        if (recommended.isEmpty()) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("🥶 **Trời lạnh rồi nhỉ!**\n\n");
+        sb.append("Một ly đồ uống nóng sẽ giúp bạn ấm áp hơn!\n\n");
+        sb.append("☕ **Đồ uống ấm áp:**\n\n");
+        
+        for (Drink d : recommended) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 **Tip:** Chọn đồ nóng, thêm gừng nếu có!\n");
+        sb.append("Giữ ấm và khỏe mạnh nhé! ☕💚");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    private ChatResponse handleMoodEnergy() {
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        // Cà phê, đồ có caffeine
+        List<Drink> recommended = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                return name.contains("cà phê") || name.contains("coffee") || 
+                       name.contains("cafe") || name.contains("espresso") ||
+                       name.contains("latte") || name.contains("americano") ||
+                       name.contains("matcha") || name.contains("trà đen");
+            })
+            .limit(5)
+            .collect(Collectors.toList());
+        
+        if (recommended.isEmpty()) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("⚡ **Cần năng lượng để chiến đấu!**\n\n");
+        sb.append("Caffeine sẽ giúp bạn tỉnh táo và tập trung hơn!\n\n");
+        sb.append("☕ **Đồ uống tăng năng lượng:**\n\n");
+        
+        for (Drink d : recommended) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 **Tip:** Cà phê đen ít đường giúp tỉnh táo nhanh nhất!\n");
+        sb.append("Chúc bạn làm việc/học tập hiệu quả! ⚡💚");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    private ChatResponse handleMoodRelax() {
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        // Trà hoa, thảo mộc, nhẹ nhàng
+        List<Drink> recommended = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                return name.contains("trà hoa") || name.contains("hoa") || 
+                       name.contains("thảo mộc") || name.contains("herbal") ||
+                       name.contains("trà xanh") || name.contains("oolong") ||
+                       name.contains("sen") || name.contains("nhài");
+            })
+            .limit(5)
+            .collect(Collectors.toList());
+        
+        if (recommended.isEmpty()) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("😌 **Thư giãn là điều tuyệt vời!**\n\n");
+        sb.append("Một ly trà nhẹ nhàng sẽ giúp bạn thư thái hơn!\n\n");
+        sb.append("🍃 **Đồ uống thư giãn:**\n\n");
+        
+        for (Drink d : recommended) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 **Tip:** Trà hoa và thảo mộc giúp giảm stress hiệu quả!\n");
+        sb.append("Tận hưởng khoảnh khắc bình yên nhé! 🍃💚");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    // ==================== OTHER HANDLERS ====================
     
     private ChatResponse handleOpeningHours() {
         return ChatResponse.builder()
