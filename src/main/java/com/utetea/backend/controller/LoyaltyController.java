@@ -33,11 +33,11 @@ public class LoyaltyController {
     public ResponseEntity<ApiResponse<SpinWheelResponse>> spinWheel(Authentication authentication) {
         String username = authentication.getName();
         SpinWheelResponse result = loyaltyService.spinWheel(username);
-        return ResponseEntity.ok(ApiResponse.success("Chúc mừng bạn đã trúng thưởng!", result));
+        return ResponseEntity.ok(ApiResponse.success(result.getMessage(), result));
     }
     
     /**
-     * Lấy danh sách phần thưởng chưa sử dụng
+     * Lấy danh sách voucher chưa sử dụng
      */
     @GetMapping("/rewards")
     public ResponseEntity<ApiResponse<List<SpinRewardDto>>> getAvailableRewards(Authentication authentication) {
@@ -47,27 +47,11 @@ public class LoyaltyController {
     }
     
     /**
-     * Kiểm tra có phần thưởng cho drink không
+     * Validate mã voucher (kiểm tra trước khi áp dụng)
      */
-    @GetMapping("/rewards/drink/{drinkId}")
-    public ResponseEntity<ApiResponse<SpinRewardDto>> getRewardForDrink(
-            Authentication authentication,
-            @PathVariable Long drinkId) {
-        String username = authentication.getName();
-        SpinRewardDto reward = loyaltyService.getRewardForDrink(username, drinkId);
-        return ResponseEntity.ok(ApiResponse.success(reward));
-    }
-    
-    /**
-     * Sử dụng phần thưởng
-     */
-    @PostMapping("/rewards/{rewardId}/redeem")
-    public ResponseEntity<ApiResponse<String>> redeemReward(
-            Authentication authentication,
-            @PathVariable Long rewardId,
-            @RequestParam(required = false) Long orderId) {
-        String username = authentication.getName();
-        loyaltyService.redeemReward(username, rewardId, orderId);
-        return ResponseEntity.ok(ApiResponse.success("Đã sử dụng phần thưởng thành công", null));
+    @GetMapping("/voucher/validate")
+    public ResponseEntity<ApiResponse<SpinRewardDto>> validateVoucher(@RequestParam String code) {
+        SpinRewardDto reward = loyaltyService.validateVoucherCode(code);
+        return ResponseEntity.ok(ApiResponse.success("Mã voucher hợp lệ, giảm " + reward.getDiscountPercent() + "%", reward));
     }
 }

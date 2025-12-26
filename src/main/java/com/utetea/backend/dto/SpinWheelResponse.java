@@ -9,8 +9,11 @@ import java.util.List;
 @AllArgsConstructor
 public class SpinWheelResponse {
     private Long rewardId;
-    private DrinkDto wonDrink;
-    private Integer winIndex; // Vị trí trúng thưởng (0-4)
-    private List<DrinkDto> wheelDrinks; // 5 món trên vòng quay
+    private String voucherCode; // Mã voucher 10 ký tự
+    private Integer discountPercent;
+    private String discountLabel;
+    private Integer winIndex;
+    private List<Integer> wheelItems;
     private Integer remainingPoints;
+    private String message;
 }

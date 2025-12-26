@@ -5,6 +5,7 @@ import com.utetea.backend.model.UserRole;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -31,4 +32,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
            "LOWER(u.email) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
            "u.phone LIKE CONCAT('%', :keyword, '%')")
     Page<User> searchByKeyword(@Param("keyword") String keyword, Pageable pageable);
+    
+    // Cộng điểm loyalty cho user
+    @Modifying
+    @Query("UPDATE User u SET u.points = u.points + :points WHERE u.id = :userId")
+    int addPoints(@Param("userId") Long userId, @Param("points") Integer points);
 }

@@ -12,17 +12,15 @@ public class SpinReward extends AuditEntity {
     @JoinColumn(name = "user_id")
     private User user;
     
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "drink_id")
-    private Drink wonDrink;
+    @Column(name = "voucher_code", unique = true, nullable = false, length = 10)
+    private String voucherCode; // Mã 10 ký tự
+    
+    @Column(name = "discount_percent", nullable = false)
+    private Integer discountPercent; // 0, 10, 20, 50, 100
     
     @Column(name = "points_used", nullable = false)
     private Integer pointsUsed = 5;
     
-    @Column(name = "is_redeemed", nullable = false)
-    private Boolean isRedeemed = false;
-    
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "redeemed_order_id")
-    private Order redeemedOrder;
+    @Column(name = "is_used", nullable = false)
+    private Boolean isUsed = false;
 }

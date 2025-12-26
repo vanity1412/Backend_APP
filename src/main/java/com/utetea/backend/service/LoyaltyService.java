@@ -3,13 +3,13 @@ package com.utetea.backend.service;
 import com.utetea.backend.dto.*;
 import com.utetea.backend.exception.BadRequestException;
 import com.utetea.backend.exception.ResourceNotFoundException;
-import com.utetea.backend.mapper.DrinkMapper;
 import com.utetea.backend.model.*;
 import com.utetea.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -18,11 +18,12 @@ import java.util.stream.Collectors;
 public class LoyaltyService {
     
     private final UserRepository userRepository;
-    private final DrinkRepository drinkRepository;
     private final SpinRewardRepository spinRewardRepository;
-    private final DrinkMapper drinkMapper;
     
     private static final int POINTS_TO_SPIN = 5;
+    private static final List<Integer> WHEEL_ITEMS = Arrays.asList(0, 10, 20, 50, 100);
+    private static final String VOUCHER_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private static final int VOUCHER_LENGTH = 10;
     
     /**
      * Lấy thông tin điểm của user
@@ -31,9 +32,10 @@ public class LoyaltyService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         
-        List<SpinRewardDto> rewards = spinRewardRepository.findByUserIdAndIsRedeemedFalse(user.getId())
+        List<SpinRewardDto> rewards = spinRewardRepository
+                .findByUserIdAndIsUsedFalseAndDiscountPercentGreaterThan(user.getId(), 0)
                 .stream()
-                .map(this::toSpinRewardDto)
+                .map(this::toDto)
                 .collect(Collectors.toList());
         
         return UserPointsDto.builder()
@@ -70,98 +72,129 @@ public class LoyaltyService {
             throw new BadRequestException("Không đủ điểm để quay. Cần " + POINTS_TO_SPIN + " điểm.");
         }
         
-        // Lấy random 5 món nước active
-        List<Drink> allDrinks = drinkRepository.findByIsActiveTrue();
-        if (allDrinks.size() < 5) {
-            throw new BadRequestException("Không đủ sản phẩm để quay thưởng");
-        }
-        
-        // Shuffle và lấy 5 món
-        Collections.shuffle(allDrinks);
-        List<Drink> wheelDrinks = allDrinks.subList(0, 5);
-        
-        // Random vị trí trúng thưởng (0-4)
-        Random random = new Random();
-        int winIndex = random.nextInt(5);
-        Drink wonDrink = wheelDrinks.get(winIndex);
+        // Random vị trí trúng (0-4) với tỷ lệ khác nhau
+        int winIndex = getRandomWinIndex();
+        int discountPercent = WHEEL_ITEMS.get(winIndex);
         
         // Trừ điểm
         user.setPoints(user.getPoints() - POINTS_TO_SPIN);
         userRepository.save(user);
         
+        // Tạo mã voucher 10 ký tự
+        String voucherCode = generateUniqueVoucherCode();
+        
         // Lưu phần thưởng
         SpinReward reward = new SpinReward();
         reward.setUser(user);
-        reward.setWonDrink(wonDrink);
+        reward.setVoucherCode(voucherCode);
+        reward.setDiscountPercent(discountPercent);
         reward.setPointsUsed(POINTS_TO_SPIN);
-        reward.setIsRedeemed(false);
+        reward.setIsUsed(discountPercent == 0); // 0% đánh dấu đã dùng luôn
         reward = spinRewardRepository.save(reward);
         
-        // Convert to DTOs
-        List<DrinkDto> wheelDrinkDtos = wheelDrinks.stream()
-                .map(drinkMapper::toDto)
-                .collect(Collectors.toList());
+        String message;
+        if (discountPercent == 0) {
+            message = "Chúc bạn may mắn lần sau!";
+            voucherCode = null; // Không trả về mã nếu 0%
+        } else if (discountPercent == 100) {
+            message = "Chúc mừng! Bạn được MIỄN PHÍ 1 đơn hàng! Mã: " + voucherCode;
+        } else {
+            message = "Chúc mừng! Bạn nhận được voucher giảm " + discountPercent + "%! Mã: " + voucherCode;
+        }
         
         return SpinWheelResponse.builder()
                 .rewardId(reward.getId())
-                .wonDrink(drinkMapper.toDto(wonDrink))
+                .voucherCode(voucherCode)
+                .discountPercent(discountPercent)
+                .discountLabel(discountPercent + "%")
                 .winIndex(winIndex)
-                .wheelDrinks(wheelDrinkDtos)
+                .wheelItems(WHEEL_ITEMS)
                 .remainingPoints(user.getPoints())
+                .message(message)
                 .build();
     }
     
     /**
-     * Lấy danh sách phần thưởng chưa sử dụng
+     * Tạo mã voucher unique 10 ký tự
+     */
+    private String generateUniqueVoucherCode() {
+        SecureRandom random = new SecureRandom();
+        String code;
+        int attempts = 0;
+        do {
+            StringBuilder sb = new StringBuilder(VOUCHER_LENGTH);
+            for (int i = 0; i < VOUCHER_LENGTH; i++) {
+                sb.append(VOUCHER_CHARS.charAt(random.nextInt(VOUCHER_CHARS.length())));
+            }
+            code = sb.toString();
+            attempts++;
+        } while (spinRewardRepository.existsByVoucherCode(code) && attempts < 100);
+        
+        return code;
+    }
+    
+    /**
+     * Random với tỷ lệ:
+     * 0% - 30%
+     * 10% - 35%
+     * 20% - 20%
+     * 50% - 10%
+     * 100% - 5%
+     */
+    private int getRandomWinIndex() {
+        Random random = new Random();
+        int rand = random.nextInt(100);
+        
+        if (rand < 30) return 0;       // 0%
+        else if (rand < 65) return 1;  // 10%
+        else if (rand < 85) return 2;  // 20%
+        else if (rand < 95) return 3;  // 50%
+        else return 4;                  // 100%
+    }
+    
+    /**
+     * Lấy danh sách voucher chưa sử dụng
      */
     public List<SpinRewardDto> getAvailableRewards(String username) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         
-        return spinRewardRepository.findByUserIdAndIsRedeemedFalse(user.getId())
+        return spinRewardRepository
+                .findByUserIdAndIsUsedFalseAndDiscountPercentGreaterThan(user.getId(), 0)
                 .stream()
-                .map(this::toSpinRewardDto)
+                .map(this::toDto)
                 .collect(Collectors.toList());
     }
     
     /**
-     * Sử dụng phần thưởng (đánh dấu đã dùng)
+     * Validate và lấy thông tin voucher từ mã
      */
-    @Transactional
-    public void redeemReward(String username, Long rewardId, Long orderId) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    public SpinRewardDto validateVoucherCode(String voucherCode) {
+        SpinReward reward = spinRewardRepository.findByVoucherCodeAndIsUsedFalse(voucherCode.toUpperCase())
+                .orElseThrow(() -> new BadRequestException("Mã voucher không hợp lệ hoặc đã được sử dụng"));
         
-        SpinReward reward = spinRewardRepository.findByIdAndUserIdAndIsRedeemedFalse(rewardId, user.getId())
-                .orElseThrow(() -> new BadRequestException("Phần thưởng không tồn tại hoặc đã được sử dụng"));
-        
-        reward.setIsRedeemed(true);
-        spinRewardRepository.save(reward);
+        return toDto(reward);
     }
     
     /**
-     * Kiểm tra user có phần thưởng cho drink này không
+     * Đánh dấu voucher đã sử dụng
      */
-    public SpinRewardDto getRewardForDrink(String username, Long drinkId) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    @Transactional
+    public void markVoucherAsUsed(String voucherCode) {
+        SpinReward reward = spinRewardRepository.findByVoucherCodeAndIsUsedFalse(voucherCode.toUpperCase())
+                .orElseThrow(() -> new BadRequestException("Mã voucher không hợp lệ hoặc đã được sử dụng"));
         
-        return spinRewardRepository.findByUserIdAndIsRedeemedFalse(user.getId())
-                .stream()
-                .filter(r -> r.getWonDrink().getId().equals(drinkId))
-                .findFirst()
-                .map(this::toSpinRewardDto)
-                .orElse(null);
+        reward.setIsUsed(true);
+        spinRewardRepository.save(reward);
     }
     
-    private SpinRewardDto toSpinRewardDto(SpinReward reward) {
+    private SpinRewardDto toDto(SpinReward reward) {
         return SpinRewardDto.builder()
                 .id(reward.getId())
-                .drinkId(reward.getWonDrink().getId())
-                .drinkName(reward.getWonDrink().getName())
-                .drinkImage(reward.getWonDrink().getImageUrl())
-                .drinkPrice(reward.getWonDrink().getBasePrice().doubleValue())
-                .isRedeemed(reward.getIsRedeemed())
+                .voucherCode(reward.getVoucherCode())
+                .discountPercent(reward.getDiscountPercent())
+                .discountLabel(reward.getDiscountPercent() + "%")
+                .isUsed(reward.getIsUsed())
                 .createdAt(reward.getCreatedAt())
                 .build();
     }

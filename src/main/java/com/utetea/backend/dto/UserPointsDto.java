@@ -9,7 +9,7 @@ import java.util.List;
 @AllArgsConstructor
 public class UserPointsDto {
     private Integer currentPoints;
-    private Integer pointsToSpin; // Số điểm cần để quay (5)
+    private Integer pointsToSpin;
     private Boolean canSpin;
-    private List<SpinRewardDto> availableRewards; // Phần thưởng chưa sử dụng
+    private List<SpinRewardDto> availableRewards;
 }

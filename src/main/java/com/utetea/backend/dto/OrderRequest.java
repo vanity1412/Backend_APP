@@ -24,6 +24,8 @@ public class OrderRequest {
     
     private String promotionCode;
     
+    private String spinVoucherCode; // Mã voucher từ spin wheel
+    
     @NotNull
     private List<OrderItemRequest> items;
 }

@@ -9,10 +9,9 @@ import java.time.Instant;
 @AllArgsConstructor
 public class SpinRewardDto {
     private Long id;
-    private Long drinkId;
-    private String drinkName;
-    private String drinkImage;
-    private Double drinkPrice;
-    private Boolean isRedeemed;
+    private String voucherCode; // Mã voucher 10 ký tự
+    private Integer discountPercent;
+    private String discountLabel;
+    private Boolean isUsed;
     private Instant createdAt;
 }

@@ -31,6 +31,7 @@ public class OrderService {
     private final DrinkSizeRepository drinkSizeRepository;
     private final DrinkToppingRepository drinkToppingRepository;
     private final PromotionRepository promotionRepository;
+    private final SpinRewardRepository spinRewardRepository;
     private final EmailService emailService;
     
     @Transactional
@@ -163,9 +164,27 @@ public class OrderService {
         order.setItems(items);
         order.setTotalPrice(totalPrice);
         
-        // Apply promotion - FIX Critical #1, #2: Sử dụng pessimistic locking để tránh race condition
+        // Apply promotion or spin voucher
         BigDecimal discount = BigDecimal.ZERO;
-        if (request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
+        
+        // Ưu tiên spin voucher nếu có
+        if (request.getSpinVoucherCode() != null && !request.getSpinVoucherCode().isEmpty()) {
+            SpinReward spinReward = spinRewardRepository.findByVoucherCodeAndIsUsedFalse(request.getSpinVoucherCode().toUpperCase())
+                .orElseThrow(() -> new BusinessException("Mã voucher spin không hợp lệ hoặc đã được sử dụng"));
+            
+            // Tính discount từ spin voucher (percent)
+            discount = totalPrice.multiply(BigDecimal.valueOf(spinReward.getDiscountPercent()))
+                .divide(BigDecimal.valueOf(100));
+            
+            // Đánh dấu voucher đã sử dụng
+            spinReward.setIsUsed(true);
+            spinRewardRepository.save(spinReward);
+            
+            log.info("Applied spin voucher: {} with {}% discount = {}", 
+                spinReward.getVoucherCode(), spinReward.getDiscountPercent(), discount);
+        }
+        // Nếu không có spin voucher, kiểm tra promotion code thường
+        else if (request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
             // Sử dụng findByCodeForUpdate với PESSIMISTIC_WRITE lock để đảm bảo atomic operation
             Promotion promotion = promotionRepository.findByCodeForUpdate(request.getPromotionCode())
                 .orElseThrow(() -> new BusinessException("Mã voucher không hợp lệ"));
@@ -271,17 +290,31 @@ public class OrderService {
         // Validate status transition
         validateStatusTransition(order.getStatus(), newStatus);
         
+        // Lấy userId trước khi update
+        Long userId = order.getUser().getId();
+        
         order.setStatus(newStatus);
         order = orderRepository.save(order);
+        orderRepository.flush(); // Flush để đảm bảo order được lưu trước
         
-        // Send email notification when order is completed
+        // Cộng điểm loyalty khi order hoàn thành
         if (newStatus == OrderStatus.DONE) {
+            try {
+                // Sử dụng native update query để tránh lỗi Hibernate
+                int updated = userRepository.addPoints(userId, 1);
+                if (updated > 0) {
+                    log.info("Added 1 loyalty point for userId {}", userId);
+                }
+            } catch (Exception e) {
+                log.error("Failed to add loyalty point for order {}: {}", orderId, e.getMessage());
+            }
+            
+            // Send email notification
             try {
                 emailService.sendOrderCompletionEmail(order);
                 log.info("Order completion email sent for order {}", orderId);
             } catch (Exception e) {
                 log.error("Failed to send order completion email for order {}", orderId, e);
-                // Don't throw exception, just log the error
             }
         }
         
