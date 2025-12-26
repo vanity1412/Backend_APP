@@ -77,6 +77,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/me/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/vouchers/validate").hasAnyRole("USER", "MANAGER")
                         
+                        // Review endpoints - public for reading, authenticated for writing
+                        .requestMatchers("/api/reviews/drink/**").permitAll()
+                        .requestMatchers("/api/reviews/**").hasAnyRole("USER", "MANAGER")
+                        
                         // All other requests need authentication
                         .anyRequest().authenticated()
                 )
