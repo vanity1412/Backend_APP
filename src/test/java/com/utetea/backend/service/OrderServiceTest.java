@@ -422,7 +422,7 @@ class OrderServiceTest {
         assertEquals(1, result.size());
     }
     
-    // FIX Medium #13: Thêm test cases cho topping validation
+    // FIX Medium #13: Thêm test cases cho topping validation với đúng method findByIdWithDrink
     @Test
     void createOrder_WithInactiveTopping_ThrowsException() {
         // Arrange
@@ -434,7 +434,8 @@ class OrderServiceTest {
         when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
         when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
         when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
-        when(drinkToppingRepository.findById(1L)).thenReturn(Optional.of(testTopping));
+        // FIX: Sử dụng findByIdWithDrink thay vì findById
+        when(drinkToppingRepository.findByIdWithDrink(1L)).thenReturn(Optional.of(testTopping));
         
         // Act & Assert
         assertThrows(BusinessException.class, () -> {
@@ -457,7 +458,8 @@ class OrderServiceTest {
         when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
         when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
         when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
-        when(drinkToppingRepository.findById(1L)).thenReturn(Optional.of(testTopping));
+        // FIX: Sử dụng findByIdWithDrink thay vì findById
+        when(drinkToppingRepository.findByIdWithDrink(1L)).thenReturn(Optional.of(testTopping));
         
         // Act & Assert
         assertThrows(BusinessException.class, () -> {
@@ -475,12 +477,78 @@ class OrderServiceTest {
         when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
         when(drinkRepository.findById(1L)).thenReturn(Optional.of(testDrink));
         when(drinkSizeRepository.findByDrinkId(1L)).thenReturn(List.of(testSize));
-        when(drinkToppingRepository.findById(999L)).thenReturn(Optional.empty());
+        // FIX: Sử dụng findByIdWithDrink thay vì findById
+        when(drinkToppingRepository.findByIdWithDrink(999L)).thenReturn(Optional.empty());
         
         // Act & Assert
         assertThrows(ResourceNotFoundException.class, () -> {
             orderService.createOrder("testuser", request);
         });
+    }
+    
+    // FIX Critical #3: Thêm test cases cho quantity validation
+    @Test
+    void createOrder_WithZeroQuantity_ThrowsException() {
+        // Arrange
+        OrderRequest request = createValidOrderRequest();
+        request.getItems().get(0).setQuantity(0);
+        
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
+        when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
+        
+        // Act & Assert
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            orderService.createOrder("testuser", request);
+        });
+        assertTrue(exception.getMessage().contains("Số lượng phải lớn hơn 0"));
+    }
+    
+    @Test
+    void createOrder_WithNegativeQuantity_ThrowsException() {
+        // Arrange
+        OrderRequest request = createValidOrderRequest();
+        request.getItems().get(0).setQuantity(-1);
+        
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
+        when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
+        
+        // Act & Assert
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            orderService.createOrder("testuser", request);
+        });
+        assertTrue(exception.getMessage().contains("Số lượng phải lớn hơn 0"));
+    }
+    
+    @Test
+    void createOrder_WithQuantityExceedingMax_ThrowsException() {
+        // Arrange
+        OrderRequest request = createValidOrderRequest();
+        request.getItems().get(0).setQuantity(101); // Exceeds max of 100
+        
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
+        when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
+        
+        // Act & Assert
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            orderService.createOrder("testuser", request);
+        });
+        assertTrue(exception.getMessage().contains("Số lượng tối đa là 100"));
+    }
+    
+    @Test
+    void createOrder_WithNullQuantity_ThrowsException() {
+        // Arrange
+        OrderRequest request = createValidOrderRequest();
+        request.getItems().get(0).setQuantity(null);
+        
+        when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(testUser));
+        when(storeRepository.findById(1L)).thenReturn(Optional.of(testStore));
+        
+        // Act & Assert
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            orderService.createOrder("testuser", request);
+        });
+        assertTrue(exception.getMessage().contains("Số lượng phải lớn hơn 0"));
     }
     
     // Helper methods

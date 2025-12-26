@@ -81,6 +81,14 @@ public class OrderService {
         }
         
         for (OrderItemRequest itemReq : request.getItems()) {
+            // FIX Critical #3: Validate quantity
+            if (itemReq.getQuantity() == null || itemReq.getQuantity() <= 0) {
+                throw new BusinessException("Số lượng phải lớn hơn 0");
+            }
+            if (itemReq.getQuantity() > 100) {
+                throw new BusinessException("Số lượng tối đa là 100");
+            }
+            
             Drink drink = drinkRepository.findById(itemReq.getDrinkId())
                 .orElseThrow(() -> new ResourceNotFoundException("Drink", "id", itemReq.getDrinkId()));
             

@@ -56,15 +56,23 @@ public class VNPayHashTest {
         assertEquals(128, hash.length(), "Hash length should be 128");
     }
     
+    /**
+     * FIX Medium #9: Sử dụng statistical approach để tránh flaky test
+     * Thay vì so sánh 2 random numbers, kiểm tra uniqueness với nhiều samples
+     */
     @Test
     public void testGetRandomNumber() {
-        // Test uniqueness
+        // Test length
         String random1 = VNPayUtil.getRandomNumber(8);
-        String random2 = VNPayUtil.getRandomNumber(8);
-        
         assertEquals(8, random1.length(), "Random number should have correct length");
-        assertEquals(8, random2.length(), "Random number should have correct length");
-        // Note: There's a very small chance these could be equal, but extremely unlikely
-        assertNotEquals(random1, random2, "Two random numbers should be different");
+        
+        // Test uniqueness với statistical approach
+        java.util.Set<String> randoms = new java.util.HashSet<>();
+        for (int i = 0; i < 100; i++) {
+            randoms.add(VNPayUtil.getRandomNumber(8));
+        }
+        // Với 100 lần generate, xác suất trùng gần như 0
+        // Cho phép tối đa 5 trùng lặp (95% unique)
+        assertTrue(randoms.size() >= 95, "Should generate mostly unique numbers, got " + randoms.size() + " unique out of 100");
     }
 }

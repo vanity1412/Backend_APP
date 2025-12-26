@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -20,6 +21,10 @@ public class EmailService {
     
     private final JavaMailSender mailSender;
     
+    /**
+     * FIX High #8: Gửi email async để không block request
+     */
+    @Async
     public void sendOrderConfirmationEmail(Order order) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
@@ -36,6 +41,10 @@ public class EmailService {
         }
     }
     
+    /**
+     * FIX High #8: Gửi email async để không block request
+     */
+    @Async
     public void sendOrderCompletionEmail(Order order) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
