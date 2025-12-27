@@ -1,6 +1,8 @@
 package com.utetea.backend.security;
 
-import lombok.RequiredArgsConstructor;
+import java.util.Arrays;
+import java.util.List;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,8 +22,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
-import java.util.List;
+import lombok.RequiredArgsConstructor;
 
 @Configuration
 @EnableWebSecurity
@@ -76,6 +77,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/orders/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/me/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/vouchers/validate").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/cart/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/vnpay/create-payment").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/vnpay/create-payment-amount").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/vnpay/create-order-after-payment").hasAnyRole("USER", "MANAGER")
                         
                         // Review endpoints - public for reading, authenticated for writing
                         .requestMatchers("/api/reviews/drink/**").permitAll()
