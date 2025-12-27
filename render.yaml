@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: utetea-backend
+    env: docker
+    plan: free
+    healthCheckPath: /api/categories
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: SERVER_PORT
+        value: 8080
