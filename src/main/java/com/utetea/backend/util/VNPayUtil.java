@@ -36,7 +36,10 @@ public class VNPayUtil {
         }
     }
     
-    public static String hashAllFields(Map<String, String> fields, String hashSecret) {
+    /**
+     * Hash all fields - GIỐNG HỆT app mẫu: URL encode giá trị
+     */
+    public static String hashAllFields(Map<String, String> fields) {
         List<String> fieldNames = new ArrayList<>(fields.keySet());
         Collections.sort(fieldNames);
         StringBuilder sb = new StringBuilder();
@@ -44,17 +47,14 @@ public class VNPayUtil {
         while (itr.hasNext()) {
             String fieldName = itr.next();
             String fieldValue = fields.get(fieldName);
-            if ((fieldValue != null) && (fieldValue.length() > 0)) {
-                sb.append(fieldName);
-                sb.append("=");
-                // NO encoding for hash data
-                sb.append(fieldValue);
-            }
-            if (itr.hasNext()) {
-                sb.append("&");
+            if ((fieldValue != null) && (!fieldValue.isEmpty())) {
+                sb.append(fieldName).append("=").append(URLEncoder.encode(fieldValue, StandardCharsets.UTF_8));
+                if (itr.hasNext()) {
+                    sb.append("&");
+                }
             }
         }
-        return hmacSHA512(hashSecret, sb.toString());
+        return sb.toString();
     }
     
     /**
