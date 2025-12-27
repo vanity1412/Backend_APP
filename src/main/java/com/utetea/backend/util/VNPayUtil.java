@@ -56,6 +56,14 @@ public class VNPayUtil {
         }
         return sb.toString();
     }
+
+    /**
+     * Hash all fields với secret key - tạo HMAC SHA512
+     */
+    public static String hashAllFields(Map<String, String> fields, String secretKey) {
+        String queryString = hashAllFields(fields);
+        return hmacSHA512(secretKey, queryString);
+    }
     
     /**
      * FIX Medium #9: Generate unique transaction reference using timestamp + SecureRandom
