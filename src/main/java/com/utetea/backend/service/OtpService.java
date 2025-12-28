@@ -20,6 +20,7 @@ public class OtpService {
     
     private final JavaMailSender mailSender;
     private final UserRepository userRepository;
+    private final SendGridEmailService sendGridEmailService;
     
     private static final long OTP_VALIDITY_MINUTES = 5;
     private static final SecureRandom secureRandom = new SecureRandom();
@@ -33,38 +34,46 @@ public class OtpService {
     }
     
     /**
-     * Send OTP via email
+     * Send OTP via email - tries SendGrid first, then falls back to SMTP
      */
     public void sendOtp(String otp, String email) {
         log.info("Preparing to send OTP email to: {}", email);
+        
+        String subject = "[UTE Tea] Mã OTP xác thực tài khoản";
+        String content = "Xin chào,\n\n" +
+                "Chúng tôi đã nhận được yêu cầu xác thực tài khoản của bạn tại UTE Tea.\n\n" +
+                "----------------------------------------\n" +
+                "MÃ OTP CỦA BẠN:  " + otp + "\n" +
+                "----------------------------------------\n\n" +
+                "⏳ Mã OTP có hiệu lực trong " + OTP_VALIDITY_MINUTES + " phút.\n" +
+                "🔒 Vui lòng không chia sẻ mã này cho bất kỳ ai.\n\n" +
+                "Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email hoặc liên hệ với chúng tôi để được hỗ trợ.\n\n" +
+                "Trân trọng,\n" +
+                "UTE Tea Team\n" +
+                "----------------------------------------\n" +
+                "Email hỗ trợ: watershoputetea@gmail.com";
+
+        // Try SendGrid first (better for cloud platforms)
+        if (sendGridEmailService.isEnabled()) {
+            log.info("Attempting to send OTP via SendGrid...");
+            if (sendGridEmailService.sendEmail(email, subject, content)) {
+                log.info("OTP sent successfully via SendGrid to: {}", email);
+                return;
+            }
+            log.warn("SendGrid failed, falling back to SMTP...");
+        }
+
+        // Fallback to SMTP
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom("watershoputetea@gmail.com");
             message.setTo(email);
-            message.setSubject("[UTE Tea] Mã OTP xác thực tài khoản");
-            message.setText(
-                    "Xin chào,\n\n" +
-
-                            "Chúng tôi đã nhận được yêu cầu xác thực tài khoản của bạn tại UTE Tea.\n\n" +
-
-                            "----------------------------------------\n" +
-                            "MÃ OTP CỦA BẠN:  " + otp + "\n" +
-                            "----------------------------------------\n\n" +
-
-                            "⏳ Mã OTP có hiệu lực trong " + OTP_VALIDITY_MINUTES + " phút.\n" +
-                            "🔒 Vui lòng không chia sẻ mã này cho bất kỳ ai.\n\n" +
-
-                            "Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email hoặc liên hệ với chúng tôi để được hỗ trợ.\n\n" +
-
-                            "Trân trọng,\n" +
-                            "UTE Tea Team\n" +
-                            "----------------------------------------\n" +
-                            "Email hỗ trợ: watershoputetea@gmail.com"
-            );
+            message.setSubject(subject);
+            message.setText(content);
 
             log.debug("Attempting to send email via SMTP...");
             mailSender.send(message);
-            log.info("OTP email sent successfully to: {}", email);
+            log.info("OTP email sent successfully via SMTP to: {}", email);
         } catch (org.springframework.mail.MailAuthenticationException e) {
             log.error("SMTP Authentication failed! Check Gmail App Password. Error: {}", e.getMessage());
             throw new RuntimeException("Lỗi xác thực email. Vui lòng liên hệ admin.");
