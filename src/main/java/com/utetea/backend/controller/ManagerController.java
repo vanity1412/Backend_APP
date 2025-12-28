@@ -2,8 +2,10 @@ package com.utetea.backend.controller;
 
 import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.DashboardSummaryDto;
+import com.utetea.backend.dto.ForecastDto;
 import com.utetea.backend.dto.OrderDto;
 import com.utetea.backend.model.OrderStatus;
+import com.utetea.backend.service.ForecastService;
 import com.utetea.backend.service.ManagerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 public class ManagerController {
     
     private final ManagerService managerService;
+    private final ForecastService forecastService;
     
     @GetMapping("/test")
     @Operation(summary = "Test Auth", description = "Test authentication và role")
@@ -228,6 +231,62 @@ public class ManagerController {
         
         managerService.deleteCategory(id);
         return ResponseEntity.ok(ApiResponse.success("Category deleted"));
+    }
+    
+    // ==================== FORECAST & ANALYTICS ====================
+    
+    @GetMapping("/forecast")
+    @Operation(summary = "Full Forecast", description = "Dự báo doanh thu, giờ cao điểm, nhân sự và cảnh báo quá tải")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<ForecastDto>> getFullForecast() {
+        log.info("GET /api/manager/forecast");
+        ForecastDto forecast = forecastService.getFullForecast();
+        return ResponseEntity.ok(ApiResponse.success("Forecast loaded", forecast));
+    }
+    
+    @GetMapping("/forecast/revenue")
+    @Operation(summary = "Revenue Forecast", description = "Dự báo doanh thu theo ngày/tuần/tháng")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<ForecastDto.RevenueForecast>> getRevenueForecast() {
+        log.info("GET /api/manager/forecast/revenue");
+        ForecastDto.RevenueForecast forecast = forecastService.calculateRevenueForecast();
+        return ResponseEntity.ok(ApiResponse.success("Revenue forecast loaded", forecast));
+    }
+    
+    @GetMapping("/forecast/peak-hours")
+    @Operation(summary = "Peak Hours Analysis", description = "Phân tích giờ cao điểm")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.List<ForecastDto.PeakHourAnalysis>>> getPeakHours() {
+        log.info("GET /api/manager/forecast/peak-hours");
+        var peakHours = forecastService.analyzePeakHours();
+        return ResponseEntity.ok(ApiResponse.success("Peak hours loaded", peakHours));
+    }
+    
+    @GetMapping("/forecast/low-stock")
+    @Operation(summary = "Low Stock Warnings", description = "Cảnh báo món sắp hết dựa trên tốc độ bán")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.List<ForecastDto.LowStockWarning>>> getLowStockWarnings() {
+        log.info("GET /api/manager/forecast/low-stock");
+        var warnings = forecastService.analyzeLowStock();
+        return ResponseEntity.ok(ApiResponse.success("Low stock warnings loaded", warnings));
+    }
+    
+    @GetMapping("/forecast/staffing")
+    @Operation(summary = "Staffing Recommendations", description = "Đề xuất nhân sự theo ngày")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.List<ForecastDto.StaffingRecommendation>>> getStaffingRecommendations() {
+        log.info("GET /api/manager/forecast/staffing");
+        var recommendations = forecastService.generateStaffingRecommendations();
+        return ResponseEntity.ok(ApiResponse.success("Staffing recommendations loaded", recommendations));
+    }
+    
+    @GetMapping("/forecast/overload")
+    @Operation(summary = "Overload Warnings", description = "Cảnh báo nguy cơ quá tải")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.List<ForecastDto.OverloadWarning>>> getOverloadWarnings() {
+        log.info("GET /api/manager/forecast/overload");
+        var warnings = forecastService.detectOverloadRisks();
+        return ResponseEntity.ok(ApiResponse.success("Overload warnings loaded", warnings));
     }
 
 }
