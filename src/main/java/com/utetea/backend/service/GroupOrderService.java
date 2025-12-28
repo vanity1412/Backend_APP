@@ -32,6 +32,7 @@ public class GroupOrderService {
     private final DrinkSizeRepository drinkSizeRepository;
     private final DrinkToppingRepository drinkToppingRepository;
     private final OrderService orderService;
+    private final GroupChatService groupChatService;
     
     private static final String INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int INVITE_CODE_LENGTH = 6;
@@ -134,6 +135,11 @@ public class GroupOrderService {
         
         log.info("User {} joined group order {}", username, groupOrder.getId());
         
+        // Gửi thông báo vào chat nhóm
+        groupChatService.sendSystemMessage(groupOrder.getId(), 
+            user.getFullName() + " đã tham gia nhóm 🎉", 
+            GroupChatMessageType.SYSTEM);
+        
         return getGroupOrderById(groupOrder.getId());
     }
 
@@ -213,6 +219,11 @@ public class GroupOrderService {
         itemRepository.save(item);
         log.info("User {} added item to group order {}", username, groupOrderId);
         
+        // Gửi thông báo vào chat nhóm
+        groupChatService.sendSystemMessage(groupOrderId, 
+            user.getFullName() + " đã thêm " + drink.getName() + " 🧋", 
+            GroupChatMessageType.ITEM_ADDED);
+        
         return getGroupOrderById(groupOrderId);
     }
 
@@ -277,6 +288,11 @@ public class GroupOrderService {
         itemRepository.delete(item);
         log.info("User {} removed item {} from group order {}", username, itemId, groupOrderId);
         
+        // Gửi thông báo vào chat nhóm
+        groupChatService.sendSystemMessage(groupOrderId, 
+            user.getFullName() + " đã xóa " + item.getDrinkNameSnapshot() + " ❌", 
+            GroupChatMessageType.ITEM_REMOVED);
+        
         return getGroupOrderById(groupOrderId);
     }
 
@@ -307,6 +323,11 @@ public class GroupOrderService {
         
         log.info("User {} left group order {}", username, groupOrderId);
         
+        // Gửi thông báo vào chat nhóm
+        groupChatService.sendSystemMessage(groupOrderId, 
+            user.getFullName() + " đã rời khỏi nhóm 👋", 
+            GroupChatMessageType.SYSTEM);
+        
         return getGroupOrderById(groupOrderId);
     }
     
@@ -332,6 +353,11 @@ public class GroupOrderService {
         
         log.info("Host {} locked group order {}", username, groupOrderId);
         
+        // Gửi thông báo vào chat nhóm
+        groupChatService.sendSystemMessage(groupOrderId, 
+            "🔒 Host đã khóa đơn! Không thể thêm/sửa món nữa.", 
+            GroupChatMessageType.SYSTEM);
+        
         return getGroupOrderById(groupOrderId);
     }
     
@@ -355,6 +381,11 @@ public class GroupOrderService {
         groupOrderRepository.save(groupOrder);
         
         log.info("Host {} unlocked group order {}", username, groupOrderId);
+        
+        // Gửi thông báo vào chat nhóm
+        groupChatService.sendSystemMessage(groupOrderId, 
+            "🔓 Host đã mở khóa đơn! Có thể thêm/sửa món.", 
+            GroupChatMessageType.SYSTEM);
         
         return getGroupOrderById(groupOrderId);
     }
