@@ -34,10 +34,11 @@ public class OrderService {
     private final PromotionRepository promotionRepository;
     private final SpinRewardRepository spinRewardRepository;
 
-    // Services for Notifications
+    // Services for Notifications & Logic
     private final EmailService emailService;
     private final OrderWebSocketService orderWebSocketService;
     private final OneSignalService oneSignalService;
+    private final MemberTierService memberTierService;
 
     @Transactional
     public OrderDto createOrder(String username, OrderRequest request) {
@@ -164,16 +165,25 @@ public class OrderService {
         BigDecimal discount = BigDecimal.ZERO;
 
         if (request.getSpinVoucherCode() != null && !request.getSpinVoucherCode().isEmpty()) {
-            SpinReward spinReward = spinRewardRepository.findByVoucherCodeAndIsUsedFalse(request.getSpinVoucherCode().toUpperCase())
+            // [LOGIC MỚI] Sử dụng PESSIMISTIC_WRITE lock để tránh race condition
+            SpinReward spinReward = spinRewardRepository.findByVoucherCodeForUpdate(request.getSpinVoucherCode().toUpperCase())
                     .orElseThrow(() -> new BusinessException("Mã voucher spin không hợp lệ hoặc đã được sử dụng"));
 
+            // Double-check isUsed sau khi có lock
+            if (spinReward.getIsUsed()) {
+                throw new BusinessException("Mã voucher spin đã được sử dụng");
+            }
+
+            // Tính discount từ spin voucher (percent)
             discount = totalPrice.multiply(BigDecimal.valueOf(spinReward.getDiscountPercent()))
                     .divide(BigDecimal.valueOf(100));
 
+            // Đánh dấu voucher đã sử dụng và flush ngay lập tức
             spinReward.setIsUsed(true);
-            spinRewardRepository.save(spinReward);
+            spinRewardRepository.saveAndFlush(spinReward);
 
-            log.info("Applied spin voucher: {} with {}% discount", spinReward.getVoucherCode(), spinReward.getDiscountPercent());
+            log.info("Applied and marked spin voucher as used: {} with {}% discount = {}",
+                    spinReward.getVoucherCode(), spinReward.getDiscountPercent(), discount);
         }
         else if (request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
             Promotion promotion = promotionRepository.findByCodeForUpdate(request.getPromotionCode())
@@ -206,6 +216,17 @@ public class OrderService {
             log.info("Applied promotion: {}", promotion.getCode());
         }
 
+        // [LOGIC MỚI] Áp dụng thêm discount theo Member Tier (cộng dồn với voucher)
+        log.info("User {} has tier: {}, calculating tier discount for total: {}",
+                username, user.getMemberTier(), totalPrice);
+        BigDecimal tierDiscount = memberTierService.calculateTierDiscount(user.getMemberTier(), totalPrice);
+
+        if (tierDiscount.compareTo(BigDecimal.ZERO) > 0) {
+            discount = discount.add(tierDiscount);
+            log.info("Applied tier {} discount: {} for user {}, total discount now: {}",
+                    user.getMemberTier(), tierDiscount, username, discount);
+        }
+
         order.setDiscount(discount);
         order.setFinalPrice(totalPrice.subtract(discount));
 
@@ -229,7 +250,7 @@ public class OrderService {
             log.error("Failed to send order email", e);
         }
 
-        // OneSignal Notification cho Manager
+        // [OneSignal] Notification cho Manager
         sendNotificationToManagers(order);
 
         return orderDto;
@@ -288,7 +309,20 @@ public class OrderService {
         // Loyalty Points & Email (nếu DONE)
         if (newStatus == OrderStatus.DONE) {
             try {
-                userRepository.addPoints(userId, 1);
+                // [LOGIC MỚI] Lấy user để tính điểm theo tier multiplier
+                User user = order.getUser();
+                int basePoints = 1;
+                int earnedPoints = memberTierService.calculatePointsEarned(user.getMemberTier(), basePoints);
+
+                // Sử dụng native update query để tránh lỗi Hibernate
+                int updated = userRepository.addPoints(userId, earnedPoints);
+                if (updated > 0) {
+                    log.info("Added {} loyalty points (base: {}, tier: {}) for userId {}",
+                            earnedPoints, basePoints, user.getMemberTier(), userId);
+
+                    // Kiểm tra và nâng cấp tier nếu đủ điểm
+                    memberTierService.checkAndUpgradeTierByUserId(userId);
+                }
             } catch (Exception e) {
                 log.error("Failed to add loyalty points", e);
             }
@@ -300,7 +334,7 @@ public class OrderService {
             }
         }
 
-        // OneSignal Notification cho User sở hữu đơn
+        // [OneSignal] Notification cho User sở hữu đơn
         sendNotificationToUser(order, newStatus);
 
         return orderDto;

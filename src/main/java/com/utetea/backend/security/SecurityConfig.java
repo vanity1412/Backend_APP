@@ -79,6 +79,7 @@ public class SecurityConfig {
                         // User endpoints
                         .requestMatchers("/api/orders/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/group-orders/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/group-orders/*/chat/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/me/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/vouchers/validate").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/cart/**").hasAnyRole("USER", "MANAGER")
@@ -89,6 +90,10 @@ public class SecurityConfig {
                         // Review endpoints - public for reading, authenticated for writing
                         .requestMatchers("/api/reviews/drink/**").permitAll()
                         .requestMatchers("/api/reviews/**").hasAnyRole("USER", "MANAGER")
+                        
+                        // Live Chat endpoints
+                        .requestMatchers("/api/chat/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/chat/manager/**").hasRole("MANAGER")
                         
                         // All other requests need authentication
                         .anyRequest().authenticated()
