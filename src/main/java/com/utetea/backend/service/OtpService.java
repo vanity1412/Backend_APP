@@ -39,7 +39,7 @@ public class OtpService {
         log.info("Preparing to send OTP email to: {}", email);
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom("UTE Tea <watershoputetea@gmail.com>");
+            message.setFrom("watershoputetea@gmail.com");
             message.setTo(email);
             message.setSubject("[UTE Tea] Mã OTP xác thực tài khoản");
             message.setText(
@@ -62,11 +62,21 @@ public class OtpService {
                             "Email hỗ trợ: watershoputetea@gmail.com"
             );
 
+            log.debug("Attempting to send email via SMTP...");
             mailSender.send(message);
             log.info("OTP email sent successfully to: {}", email);
+        } catch (org.springframework.mail.MailAuthenticationException e) {
+            log.error("SMTP Authentication failed! Check Gmail App Password. Error: {}", e.getMessage());
+            throw new RuntimeException("Lỗi xác thực email. Vui lòng liên hệ admin.");
+        } catch (org.springframework.mail.MailSendException e) {
+            log.error("Failed to send email. SMTP connection issue. Error: {}", e.getMessage());
+            if (e.getMessage() != null && e.getMessage().contains("Could not connect")) {
+                throw new RuntimeException("Không thể kết nối đến máy chủ email. Vui lòng thử lại sau.");
+            }
+            throw new RuntimeException("Lỗi gửi email: " + e.getMessage());
         } catch (Exception e) {
-            log.error("Failed to send OTP email to {}: {}", email, e.getMessage());
-            throw new RuntimeException("Failed to send OTP email");
+            log.error("Unexpected error sending OTP email to {}: {}", email, e.getMessage(), e);
+            throw new RuntimeException("Lỗi gửi email OTP: " + e.getMessage());
         }
     }
     
