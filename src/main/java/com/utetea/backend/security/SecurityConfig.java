@@ -95,6 +95,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/chat/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/chat/manager/**").hasRole("MANAGER")
                         
+                        // Predictive Order endpoints
+                        .requestMatchers("/api/predictive-order/**").hasAnyRole("USER", "MANAGER")
+                        
                         // All other requests need authentication
                         .anyRequest().authenticated()
                 )
