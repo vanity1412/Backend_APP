@@ -20,44 +20,79 @@ import java.time.format.DateTimeFormatter;
 public class EmailService {
     
     private final JavaMailSender mailSender;
+    private final SendGridEmailService sendGridEmailService;
     
     /**
-     * FIX High #8: Gửi email async để không block request
+     * Gửi email xác nhận đơn hàng - ưu tiên SendGrid, fallback SMTP
      */
     @Async
     public void sendOrderConfirmationEmail(Order order) {
+        String toEmail = order.getUser().getEmail();
+        String subject = "Xác nhận đơn hàng #" + order.getId() + " - UTE Tea";
+        String htmlContent = buildOrderConfirmationEmailContent(order);
+        
+        // Try SendGrid first
+        if (sendGridEmailService.isEnabled()) {
+            log.info("Sending order confirmation via SendGrid to: {}", toEmail);
+            if (sendGridEmailService.sendHtmlEmail(toEmail, subject, htmlContent)) {
+                log.info("Order confirmation email sent successfully via SendGrid to: {}", toEmail);
+                return;
+            }
+            log.warn("SendGrid failed, falling back to SMTP...");
+        }
+        
+        // Fallback to SMTP
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
             
-            helper.setTo(order.getUser().getEmail());
-            helper.setSubject("Xác nhận đơn hàng #" + order.getId() + " - UTE Tea");
-            helper.setText(buildOrderConfirmationEmailContent(order), true);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
             
             mailSender.send(message);
-            log.info("Order confirmation email sent successfully to: {}", order.getUser().getEmail());
+            log.info("Order confirmation email sent successfully via SMTP to: {}", toEmail);
         } catch (MessagingException e) {
-            log.error("Failed to send order confirmation email to: {}", order.getUser().getEmail(), e);
+            log.error("Failed to send order confirmation email to: {}", toEmail, e);
+        } catch (Exception e) {
+            log.error("Unexpected error sending order confirmation email to: {}", toEmail, e);
         }
     }
     
     /**
-     * FIX High #8: Gửi email async để không block request
+     * Gửi email hoàn thành đơn hàng - ưu tiên SendGrid, fallback SMTP
      */
     @Async
     public void sendOrderCompletionEmail(Order order) {
+        String toEmail = order.getUser().getEmail();
+        String subject = "Đơn hàng #" + order.getId() + " đã hoàn thành - UTE Tea";
+        String htmlContent = buildOrderCompletionEmailContent(order);
+        
+        // Try SendGrid first
+        if (sendGridEmailService.isEnabled()) {
+            log.info("Sending order completion via SendGrid to: {}", toEmail);
+            if (sendGridEmailService.sendHtmlEmail(toEmail, subject, htmlContent)) {
+                log.info("Order completion email sent successfully via SendGrid to: {}", toEmail);
+                return;
+            }
+            log.warn("SendGrid failed, falling back to SMTP...");
+        }
+        
+        // Fallback to SMTP
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
             
-            helper.setTo(order.getUser().getEmail());
-            helper.setSubject("Đơn hàng #" + order.getId() + " đã hoàn thành - UTE Tea");
-            helper.setText(buildOrderCompletionEmailContent(order), true);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
             
             mailSender.send(message);
-            log.info("Order completion email sent successfully to: {}", order.getUser().getEmail());
+            log.info("Order completion email sent successfully via SMTP to: {}", toEmail);
         } catch (MessagingException e) {
-            log.error("Failed to send order completion email to: {}", order.getUser().getEmail(), e);
+            log.error("Failed to send order completion email to: {}", toEmail, e);
+        } catch (Exception e) {
+            log.error("Unexpected error sending order completion email to: {}", toEmail, e);
         }
     }
     
