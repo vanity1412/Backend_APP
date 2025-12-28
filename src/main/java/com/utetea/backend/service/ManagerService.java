@@ -185,115 +185,129 @@ public class ManagerService {
         
         com.utetea.backend.dto.RevenueStatisticsDto stats = new com.utetea.backend.dto.RevenueStatisticsDto();
         
-        // Calculate total revenue from DONE orders
-        String totalRevenueQuery = "SELECT COALESCE(SUM(o.finalPrice), 0) FROM Order o WHERE o.status = :status";
-        BigDecimal totalRevenue = entityManager.createQuery(totalRevenueQuery, BigDecimal.class)
-            .setParameter("status", OrderStatus.DONE)
-            .getSingleResult();
-        stats.setTotalRevenue(totalRevenue);
-        
-        // Get daily revenues (last N days)
-        if (days != null && days > 0) {
-            // Calculate cutoff date
-            java.time.Instant cutoffDate = java.time.Instant.now().minus(days, java.time.temporal.ChronoUnit.DAYS);
-            
-            String dailyQuery = """
-                SELECT FUNCTION('DATE', o.createdAt) as date, 
-                       COALESCE(SUM(o.finalPrice), 0) as revenue,
-                       COUNT(o.id) as orderCount
-                FROM Order o 
-                WHERE o.status = :status 
-                  AND o.createdAt >= :cutoffDate
-                GROUP BY FUNCTION('DATE', o.createdAt)
-                ORDER BY FUNCTION('DATE', o.createdAt) ASC
-                """;
-            
-            @SuppressWarnings("unchecked")
-            List<Object[]> dailyResults = entityManager.createQuery(dailyQuery)
+        try {
+            // Calculate total revenue from DONE orders
+            String totalRevenueQuery = "SELECT COALESCE(SUM(o.finalPrice), 0) FROM Order o WHERE o.status = :status";
+            BigDecimal totalRevenue = entityManager.createQuery(totalRevenueQuery, BigDecimal.class)
                 .setParameter("status", OrderStatus.DONE)
-                .setParameter("cutoffDate", cutoffDate)
-                .getResultList();
+                .getSingleResult();
+            stats.setTotalRevenue(totalRevenue != null ? totalRevenue : BigDecimal.ZERO);
             
-            List<com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue> dailyRevenues = new ArrayList<>();
-            for (Object[] row : dailyResults) {
-                java.time.LocalDate date = ((java.sql.Date) row[0]).toLocalDate();
-                BigDecimal revenue = (BigDecimal) row[1];
-                Long orderCount = ((Number) row[2]).longValue();
-                dailyRevenues.add(new com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue(date, revenue, orderCount));
+            // Get daily revenues using native query for better compatibility
+            if (days != null && days > 0) {
+                java.time.Instant cutoffDate = java.time.Instant.now().minus(days, java.time.temporal.ChronoUnit.DAYS);
+                
+                // Use native query for date grouping - works with MySQL/PostgreSQL/H2
+                String dailyNativeQuery = """
+                    SELECT CAST(o.created_at AS DATE) as order_date, 
+                           COALESCE(SUM(o.final_price), 0) as revenue,
+                           COUNT(o.id) as order_count
+                    FROM orders o 
+                    WHERE o.status = 'DONE' 
+                      AND o.created_at >= :cutoffDate
+                    GROUP BY CAST(o.created_at AS DATE)
+                    ORDER BY order_date ASC
+                    """;
+                
+                @SuppressWarnings("unchecked")
+                List<Object[]> dailyResults = entityManager.createNativeQuery(dailyNativeQuery)
+                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
+                    .getResultList();
+                
+                List<com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue> dailyRevenues = new ArrayList<>();
+                for (Object[] row : dailyResults) {
+                    java.time.LocalDate date;
+                    if (row[0] instanceof java.sql.Date) {
+                        date = ((java.sql.Date) row[0]).toLocalDate();
+                    } else if (row[0] instanceof java.time.LocalDate) {
+                        date = (java.time.LocalDate) row[0];
+                    } else {
+                        date = java.time.LocalDate.parse(row[0].toString().substring(0, 10));
+                    }
+                    BigDecimal revenue = row[1] instanceof BigDecimal ? (BigDecimal) row[1] : new BigDecimal(row[1].toString());
+                    Long orderCount = ((Number) row[2]).longValue();
+                    dailyRevenues.add(new com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue(date, revenue, orderCount));
+                }
+                stats.setDailyRevenues(dailyRevenues);
             }
-            stats.setDailyRevenues(dailyRevenues);
-        }
-        
-        // Get monthly revenues (last N months)
-        if (months != null && months > 0) {
-            // Calculate cutoff date (N months ago)
-            java.time.Instant cutoffDate = java.time.Instant.now().minus(months * 30L, java.time.temporal.ChronoUnit.DAYS);
             
-            String monthlyQuery = """
-                SELECT FUNCTION('YEAR', o.createdAt) as year,
-                       FUNCTION('MONTH', o.createdAt) as month,
-                       COALESCE(SUM(o.finalPrice), 0) as revenue,
-                       COUNT(o.id) as orderCount
-                FROM Order o 
+            // Get monthly revenues using native query
+            if (months != null && months > 0) {
+                java.time.Instant cutoffDate = java.time.Instant.now().minus(months * 30L, java.time.temporal.ChronoUnit.DAYS);
+                
+                String monthlyNativeQuery = """
+                    SELECT YEAR(o.created_at) as year_val,
+                           MONTH(o.created_at) as month_val,
+                           COALESCE(SUM(o.final_price), 0) as revenue,
+                           COUNT(o.id) as order_count
+                    FROM orders o 
+                    WHERE o.status = 'DONE'
+                      AND o.created_at >= :cutoffDate
+                    GROUP BY YEAR(o.created_at), MONTH(o.created_at)
+                    ORDER BY year_val ASC, month_val ASC
+                    """;
+                
+                @SuppressWarnings("unchecked")
+                List<Object[]> monthlyResults = entityManager.createNativeQuery(monthlyNativeQuery)
+                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
+                    .getResultList();
+                
+                List<com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue> monthlyRevenues = new ArrayList<>();
+                for (Object[] row : monthlyResults) {
+                    Integer year = ((Number) row[0]).intValue();
+                    Integer month = ((Number) row[1]).intValue();
+                    BigDecimal revenue = row[2] instanceof BigDecimal ? (BigDecimal) row[2] : new BigDecimal(row[2].toString());
+                    Long orderCount = ((Number) row[3]).longValue();
+                    monthlyRevenues.add(new com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue(year, month, revenue, orderCount));
+                }
+                stats.setMonthlyRevenues(monthlyRevenues);
+            }
+            
+            // Get top selling drinks
+            String topDrinksQuery = """
+                SELECT oi.drink.id,
+                       oi.drinkNameSnapshot,
+                       oi.drink.imageUrl,
+                       SUM(oi.quantity) as totalQuantity,
+                       SUM(oi.itemPrice) as totalRevenue
+                FROM OrderItem oi
+                JOIN oi.order o
                 WHERE o.status = :status
-                  AND o.createdAt >= :cutoffDate
-                GROUP BY FUNCTION('YEAR', o.createdAt), FUNCTION('MONTH', o.createdAt)
-                ORDER BY FUNCTION('YEAR', o.createdAt) ASC, FUNCTION('MONTH', o.createdAt) ASC
+                GROUP BY oi.drink.id, oi.drinkNameSnapshot, oi.drink.imageUrl
+                ORDER BY SUM(oi.quantity) DESC
                 """;
             
             @SuppressWarnings("unchecked")
-            List<Object[]> monthlyResults = entityManager.createQuery(monthlyQuery)
+            List<Object[]> topDrinksResults = entityManager.createQuery(topDrinksQuery)
                 .setParameter("status", OrderStatus.DONE)
-                .setParameter("cutoffDate", cutoffDate)
+                .setMaxResults(10)
                 .getResultList();
             
-            List<com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue> monthlyRevenues = new ArrayList<>();
-            for (Object[] row : monthlyResults) {
-                Integer year = (Integer) row[0];
-                Integer month = (Integer) row[1];
-                BigDecimal revenue = (BigDecimal) row[2];
-                Long orderCount = ((Number) row[3]).longValue();
-                monthlyRevenues.add(new com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue(year, month, revenue, orderCount));
+            List<com.utetea.backend.dto.RevenueStatisticsDto.TopSellingDrink> topDrinks = new ArrayList<>();
+            for (Object[] row : topDrinksResults) {
+                Long drinkId = (Long) row[0];
+                String drinkName = (String) row[1];
+                String imageUrl = (String) row[2];
+                Long totalQuantity = ((Number) row[3]).longValue();
+                BigDecimal drinkRevenue = (BigDecimal) row[4];
+                topDrinks.add(new com.utetea.backend.dto.RevenueStatisticsDto.TopSellingDrink(
+                    drinkId, drinkName, imageUrl, totalQuantity, drinkRevenue));
             }
-            stats.setMonthlyRevenues(monthlyRevenues);
+            stats.setTopSellingDrinks(topDrinks);
+            
+            log.info("Revenue statistics calculated - total: {}, daily entries: {}, monthly entries: {}, top drinks: {}",
+                totalRevenue, stats.getDailyRevenues() != null ? stats.getDailyRevenues().size() : 0,
+                stats.getMonthlyRevenues() != null ? stats.getMonthlyRevenues().size() : 0,
+                topDrinks.size());
+            
+        } catch (Exception e) {
+            log.error("Error calculating revenue statistics", e);
+            // Return empty stats instead of throwing
+            stats.setTotalRevenue(BigDecimal.ZERO);
+            stats.setDailyRevenues(new ArrayList<>());
+            stats.setMonthlyRevenues(new ArrayList<>());
+            stats.setTopSellingDrinks(new ArrayList<>());
         }
-        
-        // Get top selling drinks
-        String topDrinksQuery = """
-            SELECT oi.drink.id,
-                   oi.drinkNameSnapshot,
-                   oi.drink.imageUrl,
-                   SUM(oi.quantity) as totalQuantity,
-                   SUM(oi.itemPrice) as totalRevenue
-            FROM OrderItem oi
-            JOIN oi.order o
-            WHERE o.status = :status
-            GROUP BY oi.drink.id, oi.drinkNameSnapshot, oi.drink.imageUrl
-            ORDER BY SUM(oi.quantity) DESC
-            """;
-        
-        @SuppressWarnings("unchecked")
-        List<Object[]> topDrinksResults = entityManager.createQuery(topDrinksQuery)
-            .setParameter("status", OrderStatus.DONE)
-            .setMaxResults(10)
-            .getResultList();
-        
-        List<com.utetea.backend.dto.RevenueStatisticsDto.TopSellingDrink> topDrinks = new ArrayList<>();
-        for (Object[] row : topDrinksResults) {
-            Long drinkId = (Long) row[0];
-            String drinkName = (String) row[1];
-            String imageUrl = (String) row[2];
-            Long totalQuantity = ((Number) row[3]).longValue();
-            BigDecimal drinkRevenue = (BigDecimal) row[4];
-            topDrinks.add(new com.utetea.backend.dto.RevenueStatisticsDto.TopSellingDrink(
-                drinkId, drinkName, imageUrl, totalQuantity, drinkRevenue));
-        }
-        stats.setTopSellingDrinks(topDrinks);
-        
-        log.info("Revenue statistics calculated - total: {}, daily entries: {}, monthly entries: {}, top drinks: {}",
-            totalRevenue, stats.getDailyRevenues() != null ? stats.getDailyRevenues().size() : 0,
-            stats.getMonthlyRevenues() != null ? stats.getMonthlyRevenues().size() : 0,
-            topDrinks.size());
         
         return stats;
     }

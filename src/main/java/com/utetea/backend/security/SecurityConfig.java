@@ -75,6 +75,7 @@ public class SecurityConfig {
                         
                         // User endpoints
                         .requestMatchers("/api/orders/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/group-orders/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/me/**").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/vouchers/validate").hasAnyRole("USER", "MANAGER")
                         .requestMatchers("/api/cart/**").hasAnyRole("USER", "MANAGER")
