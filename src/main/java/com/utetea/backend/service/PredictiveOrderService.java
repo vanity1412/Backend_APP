@@ -26,6 +26,7 @@ public class PredictiveOrderService {
     
     private final OrderRepository orderRepository;
     private final DrinkRepository drinkRepository;
+    private final DrinkSizeRepository drinkSizeRepository;
     
     // Ngưỡng confidence để hiển thị prediction (giảm để dễ test)
     private static final double MIN_CONFIDENCE = 0.2;
@@ -80,6 +81,26 @@ public class PredictiveOrderService {
                     .message("Độ tin cậy chưa đủ cao (score: " + 
                             (bestPattern != null ? String.format("%.2f", bestPattern.getScore()) : "0") + ")")
                     .build();
+        }
+        
+        // Tìm sizeId từ sizeName và drinkId
+        if (bestPattern.getSizeName() != null && !bestPattern.getSizeName().isEmpty()) {
+            drinkSizeRepository.findByDrinkIdAndSizeName(bestPattern.getDrinkId(), bestPattern.getSizeName())
+                    .ifPresent(size -> bestPattern.setSizeId(size.getId()));
+            log.info("Found sizeId: {} for sizeName: {} and drinkId: {}", 
+                    bestPattern.sizeId, bestPattern.getSizeName(), bestPattern.getDrinkId());
+        }
+        
+        // Nếu không tìm được sizeId, lấy size đầu tiên của drink
+        if (bestPattern.sizeId == null) {
+            List<com.utetea.backend.model.DrinkSize> sizes = drinkSizeRepository.findByDrinkId(bestPattern.getDrinkId());
+            if (!sizes.isEmpty()) {
+                bestPattern.setSizeId(sizes.get(0).getId());
+                log.info("Using default sizeId: {} for drink: {} (total sizes: {})", 
+                        bestPattern.sizeId, bestPattern.getDrinkId(), sizes.size());
+            } else {
+                log.warn("No sizes found for drink: {}", bestPattern.getDrinkId());
+            }
         }
         
         // Build prediction response
@@ -267,6 +288,7 @@ public class PredictiveOrderService {
     private static class DrinkPattern {
         private final Drink drink;
         private final String sizeName;
+        private Long sizeId; // Thêm sizeId
         private final List<PredictedTopping> toppings;
         private final String note;
         private int orderCount = 0;
@@ -287,6 +309,9 @@ public class PredictiveOrderService {
                             .build())
                     .collect(Collectors.toList());
         }
+        
+        public void setSizeId(Long sizeId) { this.sizeId = sizeId; }
+        public Long getDrinkId() { return drink.getId(); }
         
         public void incrementOrderCount() { orderCount++; }
         public int getOrderCount() { return orderCount; }
@@ -330,6 +355,7 @@ public class PredictiveOrderService {
                     .drinkName(drink.getName())
                     .drinkImage(drink.getImageUrl())
                     .sizeName(sizeName)
+                    .sizeId(sizeId) // Thêm sizeId vào response
                     .price(drink.getBasePrice())
                     .orderCount(orderCount)
                     .lastOrderTime(formattedTime)

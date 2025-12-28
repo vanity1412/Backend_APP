@@ -15,4 +15,8 @@ public interface DrinkSizeRepository extends JpaRepository<DrinkSize, Long> {
     // Batch load sizes cho nhiều drinks (FIX N+1)
     @Query("SELECT s FROM DrinkSize s WHERE s.drink.id IN :drinkIds")
     List<DrinkSize> findByDrinkIdIn(@Param("drinkIds") List<Long> drinkIds);
+    
+    // Tìm size theo drinkId và sizeName (cho Predictive Order)
+    @Query("SELECT s FROM DrinkSize s WHERE s.drink.id = :drinkId AND s.sizeName = :sizeName")
+    java.util.Optional<DrinkSize> findByDrinkIdAndSizeName(@Param("drinkId") Long drinkId, @Param("sizeName") String sizeName);
 }
