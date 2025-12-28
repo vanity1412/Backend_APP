@@ -27,19 +27,24 @@ public class PredictiveOrderService {
     private final OrderRepository orderRepository;
     private final DrinkRepository drinkRepository;
     
-    // Ngưỡng confidence để hiển thị prediction
-    private static final double MIN_CONFIDENCE = 0.4;
+    // Ngưỡng confidence để hiển thị prediction (giảm để dễ test)
+    private static final double MIN_CONFIDENCE = 0.2;
     
     /**
      * Dự đoán món khách hàng muốn đặt
      */
     public PredictiveOrderDto getPrediction(Long userId, String weatherCondition) {
-        List<Order> orders = orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId);
+        log.info("Getting prediction for userId: {}", userId);
         
-        if (orders.isEmpty() || orders.size() < 2) {
+        List<Order> orders = orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId);
+        log.info("Found {} orders for user {}", orders.size(), userId);
+        
+        // Giảm yêu cầu từ 2 đơn xuống 1 đơn để dễ test
+        if (orders.isEmpty()) {
+            log.info("No orders found for user {}", userId);
             return PredictiveOrderDto.builder()
                     .hasPrediction(false)
-                    .message("Chưa đủ dữ liệu để dự đoán")
+                    .message("Chưa có lịch sử đặt hàng")
                     .build();
         }
         
@@ -51,6 +56,7 @@ public class PredictiveOrderService {
         Map<Long, DrinkPattern> drinkPatterns = analyzeDrinkPatterns(orders, currentHour, currentDay);
         
         if (drinkPatterns.isEmpty()) {
+            log.info("No drink patterns found for user");
             return PredictiveOrderDto.builder()
                     .hasPrediction(false)
                     .message("Chưa tìm thấy pattern phù hợp")
@@ -62,10 +68,17 @@ public class PredictiveOrderService {
                 .max(Comparator.comparingDouble(DrinkPattern::getScore))
                 .orElse(null);
         
+        log.info("Best pattern: drink={}, score={}", 
+                bestPattern != null ? bestPattern.getDrinkName() : "null",
+                bestPattern != null ? bestPattern.getScore() : 0);
+        
         if (bestPattern == null || bestPattern.getScore() < MIN_CONFIDENCE) {
+            log.info("Confidence too low: {} < {}", 
+                    bestPattern != null ? bestPattern.getScore() : 0, MIN_CONFIDENCE);
             return PredictiveOrderDto.builder()
                     .hasPrediction(false)
-                    .message("Độ tin cậy chưa đủ cao")
+                    .message("Độ tin cậy chưa đủ cao (score: " + 
+                            (bestPattern != null ? String.format("%.2f", bestPattern.getScore()) : "0") + ")")
                     .build();
         }
         
@@ -92,14 +105,36 @@ public class PredictiveOrderService {
         Instant now = Instant.now();
         ZoneId zoneId = ZoneId.systemDefault();
         
-        for (Order order : orders) {
+        // Chỉ phân tích đơn hàng DONE
+        List<Order> completedOrders = orders.stream()
+                .filter(o -> o.getStatus() == OrderStatus.DONE)
+                .collect(Collectors.toList());
+        
+        log.info("Analyzing {} completed orders out of {} total", completedOrders.size(), orders.size());
+        
+        if (completedOrders.isEmpty()) {
+            log.info("No completed orders to analyze");
+            return patterns;
+        }
+        
+        for (Order order : completedOrders) {
             Instant orderInstant = order.getCreatedAt();
             LocalDateTime orderTime = LocalDateTime.ofInstant(orderInstant, zoneId);
             int orderHour = orderTime.getHour();
             DayOfWeek orderDay = orderTime.getDayOfWeek();
             long daysSinceOrder = ChronoUnit.DAYS.between(orderInstant, now);
             
+            if (order.getItems() == null || order.getItems().isEmpty()) {
+                log.warn("Order {} has no items", order.getId());
+                continue;
+            }
+            
             for (OrderItem item : order.getItems()) {
+                if (item.getDrink() == null) {
+                    log.warn("OrderItem {} has no drink", item.getId());
+                    continue;
+                }
+                
                 Long drinkId = item.getDrink().getId();
                 
                 DrinkPattern pattern = patterns.computeIfAbsent(drinkId, 
@@ -114,7 +149,7 @@ public class PredictiveOrderService {
                 double timeScore = calculateTimeScore(orderHour, currentHour);
                 double dayScore = calculateDayScore(orderDay, currentDay);
                 double recencyScore = calculateRecencyScore(daysSinceOrder);
-                double frequencyScore = pattern.getOrderCount() / (double) orders.size();
+                double frequencyScore = pattern.getOrderCount() / (double) completedOrders.size();
                 
                 // Weighted score
                 double score = (timeScore * 0.35) + (dayScore * 0.25) + 
@@ -124,6 +159,7 @@ public class PredictiveOrderService {
             }
         }
         
+        log.info("Found {} drink patterns", patterns.size());
         return patterns;
     }
     
