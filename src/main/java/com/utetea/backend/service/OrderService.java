@@ -35,6 +35,7 @@ public class OrderService {
     private final PromotionRepository promotionRepository;
     private final SpinRewardRepository spinRewardRepository;
     private final EmailService emailService;
+    private final OrderWebSocketService orderWebSocketService;
     
     @Transactional
     public OrderDto createOrder(String username, OrderRequest request) {
@@ -243,6 +244,18 @@ public class OrderService {
         order = orderRepository.save(order);
         log.info("Order created successfully with id: {}, final price: {}", order.getId(), order.getFinalPrice());
         
+        // Map to DTO for response and WebSocket
+        OrderDto orderDto = mapToDto(order);
+        
+        // Notify managers via WebSocket about new order
+        try {
+            orderWebSocketService.notifyNewOrder(orderDto);
+            orderWebSocketService.notifyNewOrderToStore(orderDto, store.getId());
+            log.info("WebSocket notification sent for new order #{}", order.getId());
+        } catch (Exception e) {
+            log.error("Failed to send WebSocket notification for order {}", order.getId(), e);
+        }
+        
         // Send order confirmation email
         try {
             emailService.sendOrderConfirmationEmail(order);
@@ -252,7 +265,7 @@ public class OrderService {
             // Don't throw exception, just log the error
         }
         
-        return mapToDto(order);
+        return orderDto;
     }
     
     @Transactional(readOnly = true)
@@ -301,6 +314,17 @@ public class OrderService {
         order = orderRepository.save(order);
         orderRepository.flush(); // Flush để đảm bảo order được lưu trước
         
+        // Map to DTO for response and WebSocket
+        OrderDto orderDto = mapToDto(order);
+        
+        // Notify via WebSocket about status update
+        try {
+            orderWebSocketService.notifyOrderStatusUpdate(orderDto);
+            log.info("WebSocket notification sent for order #{} status update", order.getId());
+        } catch (Exception e) {
+            log.error("Failed to send WebSocket notification for order {} status update", order.getId(), e);
+        }
+        
         // Cộng điểm loyalty khi order hoàn thành
         if (newStatus == OrderStatus.DONE) {
             try {
@@ -323,7 +347,7 @@ public class OrderService {
         }
         
         log.info("Order {} status updated successfully", orderId);
-        return mapToDto(order);
+        return orderDto;
     }
     
     private void validateStatusTransition(OrderStatus currentStatus, OrderStatus newStatus) {

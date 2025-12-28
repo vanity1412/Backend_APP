@@ -66,6 +66,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/vnpay/test-config").permitAll()
                         .requestMatchers("/api/vnpay/test-payment-url").permitAll()
                         
+                        // WebSocket endpoints
+                        .requestMatchers("/ws/**").permitAll()
+                        
                         // Manager test endpoint (for debugging)
                         .requestMatchers("/api/manager/test").permitAll()
                         
