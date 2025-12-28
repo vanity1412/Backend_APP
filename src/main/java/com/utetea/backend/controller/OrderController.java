@@ -21,6 +21,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.utetea.backend.service.OneSignalService;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -31,6 +32,7 @@ import java.util.List;
 public class OrderController {
     
     private final OrderService orderService;
+    private final OneSignalService oneSignalService;
     private final UserRepository userRepository;
     
     /**
@@ -121,7 +123,51 @@ public class OrderController {
     public ResponseEntity<ApiResponse<OrderDto>> updateOrderStatus(
             @PathVariable Long orderId,
             @RequestParam OrderStatus status) {
+
         OrderDto order = orderService.updateOrderStatus(orderId, status);
+
+        // LOGIC GỬI THÔNG BÁO CÁ NHÂN HÓA
+        try {
+            String userId = String.valueOf(order.getUserId());
+            String title = "Cập nhật đơn hàng #" + orderId;
+            String content = "";
+
+            switch (status) {
+                case PENDING:
+                    content = "Đơn hàng đang chờ xác nhận từ cửa hàng.";
+                    break;
+
+                case MAKING:
+                    content = "Đơn hàng của bạn đang được pha chế. Vui lòng đợi trong giây lát.";
+                    break;
+
+                case SHIPPING:
+                    content = "Đơn hàng đang được giao đến bạn. Vui lòng chú ý điện thoại.";
+                    break;
+
+                case READY:
+                    content = "Đơn hàng đã sẵn sàng. Bạn có thể đến lấy hàng.";
+                    break;
+
+                case DONE:
+                    content = "Đơn hàng đã hoàn thành. Cảm ơn bạn đã sử dụng dịch vụ!";
+                    break;
+
+                case CANCELED:
+                    content = "Đơn hàng của bạn đã bị hủy.";
+                    break;
+
+                default:
+                    content = "Trạng thái đơn hàng đã được cập nhật.";
+            }
+
+            // Gửi đến user cụ thể
+            oneSignalService.sendToUser(userId, title, content);
+
+        } catch (Exception e) {
+            log.error("Failed to send push notification for order " + orderId, e);
+        }
+
         return ResponseEntity.ok(ApiResponse.success("Order status updated", order));
     }
 }

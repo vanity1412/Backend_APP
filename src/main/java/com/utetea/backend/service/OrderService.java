@@ -15,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,7 +24,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class OrderService {
-    
+
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
     private final StoreRepository storeRepository;
@@ -34,35 +33,34 @@ public class OrderService {
     private final DrinkToppingRepository drinkToppingRepository;
     private final PromotionRepository promotionRepository;
     private final SpinRewardRepository spinRewardRepository;
+
+    // Services for Notifications
     private final EmailService emailService;
     private final OrderWebSocketService orderWebSocketService;
-    
+    private final OneSignalService oneSignalService;
+
     @Transactional
     public OrderDto createOrder(String username, OrderRequest request) {
         log.info("Creating order for user: {}, store: {}", username, request.getStoreId());
-        
+
         // Validate user
         User user = userRepository.findByUsername(username)
-            .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
-        
+                .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
+
         if (!user.getActive()) {
             throw new BusinessException("User account is inactive", HttpStatus.FORBIDDEN);
         }
-        
-        // Security check: Ensure the authenticated user matches the order user
-        // This prevents users from creating orders for other users
-        log.debug("Validated user {} for order creation", username);
-        
+
         // Validate store
         Store store = storeRepository.findById(request.getStoreId())
-            .orElseThrow(() -> new ResourceNotFoundException("Store", "id", request.getStoreId()));
-        
+                .orElseThrow(() -> new ResourceNotFoundException("Store", "id", request.getStoreId()));
+
         Order order = new Order();
         order.setUser(user);
         order.setStore(store);
         order.setType(request.getType());
-        
-        // Xử lý address: nếu PICKUP thì set "Tại Cửa Hàng", nếu DELIVERY thì lấy từ request
+
+        // Xử lý address
         if (request.getType() == OrderType.PICKUP) {
             order.setAddress("Tại Cửa Hàng");
         } else if (request.getType() == OrderType.DELIVERY) {
@@ -71,35 +69,34 @@ public class OrderService {
             }
             order.setAddress(request.getAddress());
         }
-        
+
         order.setPickupTime(request.getPickupTime());
         order.setStatus(OrderStatus.PENDING);
         order.setPaymentMethod(request.getPaymentMethod());
-        
+
         BigDecimal totalPrice = BigDecimal.ZERO;
         Set<OrderItem> items = new HashSet<>();
-        
-        // Validate items not empty
+
+        // Validate items
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BusinessException("Order must contain at least one item");
         }
-        
+
         for (OrderItemRequest itemReq : request.getItems()) {
-            // FIX Critical #3: Validate quantity
             if (itemReq.getQuantity() == null || itemReq.getQuantity() <= 0) {
                 throw new BusinessException("Số lượng phải lớn hơn 0");
             }
             if (itemReq.getQuantity() > 100) {
                 throw new BusinessException("Số lượng tối đa là 100");
             }
-            
+
             Drink drink = drinkRepository.findById(itemReq.getDrinkId())
-                .orElseThrow(() -> new ResourceNotFoundException("Drink", "id", itemReq.getDrinkId()));
-            
+                    .orElseThrow(() -> new ResourceNotFoundException("Drink", "id", itemReq.getDrinkId()));
+
             if (!drink.getIsActive()) {
                 throw new BusinessException("Drink '" + drink.getName() + "' is not available");
             }
-            
+
             OrderItem item = new OrderItem();
             item.setOrder(order);
             item.setDrink(drink);
@@ -107,13 +104,12 @@ public class OrderService {
             item.setSizeNameSnapshot(itemReq.getSizeName());
             item.setQuantity(itemReq.getQuantity());
             item.setNote(itemReq.getNote());
-            
+
             BigDecimal itemPrice = drink.getBasePrice();
-            
+
             // Add size price
             List<DrinkSize> sizes = drinkSizeRepository.findByDrinkId(drink.getId());
             if (!sizes.isEmpty()) {
-                // Drink có size options, validate size
                 boolean sizeFound = false;
                 for (DrinkSize size : sizes) {
                     if (size.getSizeName().equals(itemReq.getSizeName())) {
@@ -122,267 +118,289 @@ public class OrderService {
                         break;
                     }
                 }
-                
+
                 if (!sizeFound) {
                     throw new BusinessException("Size '" + itemReq.getSizeName() + "' not available for drink '" + drink.getName() + "'");
                 }
             }
-            // Nếu sizes rỗng, drink không có size options, bỏ qua validation
-            
-            // Add toppings - FIX High #7: Validate topping thuộc về drink
+
+            // Add toppings
             if (itemReq.getToppingIds() != null && !itemReq.getToppingIds().isEmpty()) {
                 Set<OrderItemTopping> toppings = new HashSet<>();
                 for (Long toppingId : itemReq.getToppingIds()) {
-                    // FIX: Sử dụng findByIdWithDrink để fetch drink cùng lúc
                     DrinkTopping topping = drinkToppingRepository.findByIdWithDrink(toppingId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Topping", "id", toppingId));
-                    
-                    // Validate topping thuộc về drink này hoặc là topping chung (drink = null)
+                            .orElseThrow(() -> new ResourceNotFoundException("Topping", "id", toppingId));
+
                     if (topping.getDrink() != null && !topping.getDrink().getId().equals(drink.getId())) {
                         throw new BusinessException("Topping '" + topping.getToppingName() + "' không thuộc về drink '" + drink.getName() + "'");
                     }
-                    
+
                     if (!topping.getIsActive()) {
                         throw new BusinessException("Topping '" + topping.getToppingName() + "' is not available");
                     }
-                    
+
                     OrderItemTopping orderTopping = new OrderItemTopping();
                     orderTopping.setOrderItem(item);
                     orderTopping.setToppingNameSnapshot(topping.getToppingName());
                     orderTopping.setPriceSnapshot(topping.getPrice());
                     toppings.add(orderTopping);
-                    
+
                     itemPrice = itemPrice.add(topping.getPrice());
                 }
                 item.setToppings(toppings);
             }
-            
+
             itemPrice = itemPrice.multiply(BigDecimal.valueOf(itemReq.getQuantity()));
             item.setItemPrice(itemPrice);
             items.add(item);
-            
+
             totalPrice = totalPrice.add(itemPrice);
         }
-        
+
         order.setItems(items);
         order.setTotalPrice(totalPrice);
-        
+
         // Apply promotion or spin voucher
         BigDecimal discount = BigDecimal.ZERO;
-        
-        // Ưu tiên spin voucher nếu có
+
         if (request.getSpinVoucherCode() != null && !request.getSpinVoucherCode().isEmpty()) {
             SpinReward spinReward = spinRewardRepository.findByVoucherCodeAndIsUsedFalse(request.getSpinVoucherCode().toUpperCase())
-                .orElseThrow(() -> new BusinessException("Mã voucher spin không hợp lệ hoặc đã được sử dụng"));
-            
-            // Tính discount từ spin voucher (percent)
+                    .orElseThrow(() -> new BusinessException("Mã voucher spin không hợp lệ hoặc đã được sử dụng"));
+
             discount = totalPrice.multiply(BigDecimal.valueOf(spinReward.getDiscountPercent()))
-                .divide(BigDecimal.valueOf(100));
-            
-            // Đánh dấu voucher đã sử dụng
+                    .divide(BigDecimal.valueOf(100));
+
             spinReward.setIsUsed(true);
             spinRewardRepository.save(spinReward);
-            
-            log.info("Applied spin voucher: {} with {}% discount = {}", 
-                spinReward.getVoucherCode(), spinReward.getDiscountPercent(), discount);
+
+            log.info("Applied spin voucher: {} with {}% discount", spinReward.getVoucherCode(), spinReward.getDiscountPercent());
         }
-        // Nếu không có spin voucher, kiểm tra promotion code thường
         else if (request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
-            // Sử dụng findByCodeForUpdate với PESSIMISTIC_WRITE lock để đảm bảo atomic operation
             Promotion promotion = promotionRepository.findByCodeForUpdate(request.getPromotionCode())
-                .orElseThrow(() -> new BusinessException("Mã voucher không hợp lệ"));
-            
+                    .orElseThrow(() -> new BusinessException("Mã voucher không hợp lệ"));
+
             LocalDateTime now = LocalDateTime.now();
-            if (!promotion.getIsActive()) {
-                throw new BusinessException("Mã voucher đã bị vô hiệu hóa");
-            }
-            
-            if (promotion.getStartDate().isAfter(now)) {
-                throw new BusinessException("Mã voucher chưa có hiệu lực");
-            }
-            
-            if (promotion.getEndDate().isBefore(now)) {
-                throw new BusinessException("Mã voucher đã hết hạn");
-            }
-            
-            // Check usage limit - với pessimistic lock, check này giờ đã atomic
-            if (promotion.getUsageLimit() != null && 
-                promotion.getUsedCount() >= promotion.getUsageLimit()) {
+            if (!promotion.getIsActive()) throw new BusinessException("Mã voucher đã bị vô hiệu hóa");
+            if (promotion.getStartDate().isAfter(now)) throw new BusinessException("Mã voucher chưa có hiệu lực");
+            if (promotion.getEndDate().isBefore(now)) throw new BusinessException("Mã voucher đã hết hạn");
+            if (promotion.getUsageLimit() != null && promotion.getUsedCount() >= promotion.getUsageLimit()) {
                 throw new BusinessException("Mã voucher đã hết lượt sử dụng");
             }
-            
+
             if (totalPrice.compareTo(promotion.getMinOrderValue()) < 0) {
-                throw new BusinessException(String.format(
-                    "Giá trị đơn hàng tối thiểu là %s VND để sử dụng voucher này", 
-                    promotion.getMinOrderValue()));
+                throw new BusinessException(String.format("Giá trị đơn hàng tối thiểu là %s VND", promotion.getMinOrderValue()));
             }
-            
+
             if (promotion.getDiscountType() == DiscountType.PERCENT) {
-                discount = totalPrice.multiply(promotion.getDiscountValue())
-                    .divide(BigDecimal.valueOf(100));
-                
-                // Apply max discount limit for PERCENT type
-                if (promotion.getMaxDiscountAmount() != null && 
-                    discount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
+                discount = totalPrice.multiply(promotion.getDiscountValue()).divide(BigDecimal.valueOf(100));
+                if (promotion.getMaxDiscountAmount() != null && discount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
                     discount = promotion.getMaxDiscountAmount();
                 }
             } else {
                 discount = promotion.getDiscountValue();
             }
-            
-            // Increment usage count - atomic với pessimistic lock
+
             promotion.setUsedCount(promotion.getUsedCount() + 1);
             promotionRepository.save(promotion);
-            
             order.setPromotion(promotion);
-            log.info("Applied promotion: {} with discount: {}", promotion.getCode(), discount);
+            log.info("Applied promotion: {}", promotion.getCode());
         }
-        
+
         order.setDiscount(discount);
         order.setFinalPrice(totalPrice.subtract(discount));
-        
+
         order = orderRepository.save(order);
-        log.info("Order created successfully with id: {}, final price: {}", order.getId(), order.getFinalPrice());
-        
-        // Map to DTO for response and WebSocket
+        log.info("Order created successfully with id: {}", order.getId());
+
         OrderDto orderDto = mapToDto(order);
-        
-        // Notify managers via WebSocket about new order
+
+        // WebSocket Notification
         try {
             orderWebSocketService.notifyNewOrder(orderDto);
             orderWebSocketService.notifyNewOrderToStore(orderDto, store.getId());
-            log.info("WebSocket notification sent for new order #{}", order.getId());
         } catch (Exception e) {
-            log.error("Failed to send WebSocket notification for order {}", order.getId(), e);
+            log.error("Failed to send WebSocket notification", e);
         }
-        
-        // Send order confirmation email
+
+        // Email Notification
         try {
             emailService.sendOrderConfirmationEmail(order);
-            log.info("Order confirmation email sent for order {}", order.getId());
         } catch (Exception e) {
-            log.error("Failed to send order confirmation email for order {}", order.getId(), e);
-            // Don't throw exception, just log the error
+            log.error("Failed to send order email", e);
         }
-        
+
+        // OneSignal Notification cho Manager
+        sendNotificationToManagers(order);
+
         return orderDto;
     }
-    
+
     @Transactional(readOnly = true)
     public List<OrderDto> getUserOrders(Long userId) {
-        // FIX Performance: Sử dụng JOIN FETCH để tránh N+1 query
         return orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId).stream()
-            .map(this::mapToDto)
-            .collect(Collectors.toList());
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
-    
+
     @Transactional(readOnly = true)
     public List<OrderDto> getUserCurrentOrders(Long userId) {
         return orderRepository.findByUserIdAndStatusNotOrderByCreatedAtDesc(userId, OrderStatus.DONE).stream()
-            .map(this::mapToDto)
-            .collect(Collectors.toList());
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
-    
+
     @Transactional(readOnly = true)
     public OrderDto getOrderById(Long orderId) {
-        // FIX Performance: Sử dụng JOIN FETCH để tránh N+1 query
         Order order = orderRepository.findByIdWithItems(orderId)
-            .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
         return mapToDto(order);
     }
-    
+
     @Transactional(readOnly = true)
     public Page<OrderDto> getAllOrders(Pageable pageable) {
         return orderRepository.findAllByOrderByCreatedAtDesc(pageable)
-            .map(this::mapToDto);
+                .map(this::mapToDto);
     }
-    
+
     @Transactional
     public OrderDto updateOrderStatus(Long orderId, OrderStatus newStatus) {
         log.info("Updating order {} status to {}", orderId, newStatus);
-        
+
         Order order = orderRepository.findById(orderId)
-            .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
-        
-        // Validate status transition
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
+
         validateStatusTransition(order.getStatus(), newStatus);
-        
-        // Lấy userId trước khi update
+
         Long userId = order.getUser().getId();
-        
         order.setStatus(newStatus);
         order = orderRepository.save(order);
-        orderRepository.flush(); // Flush để đảm bảo order được lưu trước
-        
-        // Map to DTO for response and WebSocket
+        orderRepository.flush();
+
         OrderDto orderDto = mapToDto(order);
-        
-        // Notify via WebSocket about status update
+
+        // WebSocket
         try {
             orderWebSocketService.notifyOrderStatusUpdate(orderDto);
-            log.info("WebSocket notification sent for order #{} status update", order.getId());
         } catch (Exception e) {
-            log.error("Failed to send WebSocket notification for order {} status update", order.getId(), e);
+            log.error("Failed to send WebSocket status update", e);
         }
-        
-        // Cộng điểm loyalty khi order hoàn thành
+
+        // Loyalty Points & Email (nếu DONE)
         if (newStatus == OrderStatus.DONE) {
             try {
-                // Sử dụng native update query để tránh lỗi Hibernate
-                int updated = userRepository.addPoints(userId, 1);
-                if (updated > 0) {
-                    log.info("Added 1 loyalty point for userId {}", userId);
-                }
+                userRepository.addPoints(userId, 1);
             } catch (Exception e) {
-                log.error("Failed to add loyalty point for order {}: {}", orderId, e.getMessage());
+                log.error("Failed to add loyalty points", e);
             }
-            
-            // Send email notification
+
             try {
                 emailService.sendOrderCompletionEmail(order);
-                log.info("Order completion email sent for order {}", orderId);
             } catch (Exception e) {
-                log.error("Failed to send order completion email for order {}", orderId, e);
+                log.error("Failed to send completion email", e);
             }
         }
-        
-        log.info("Order {} status updated successfully", orderId);
+
+        // OneSignal Notification cho User sở hữu đơn
+        sendNotificationToUser(order, newStatus);
+
         return orderDto;
     }
-    
+
+    /**
+     * Gửi thông báo OneSignal cho tất cả Manager khi có đơn mới
+     */
+    private void sendNotificationToManagers(Order order) {
+        try {
+            // Tìm tất cả user có quyền MANAGER
+            List<User> managers = userRepository.findByRole(UserRole.MANAGER);
+
+            if (managers.isEmpty()) return;
+
+            // Lấy danh sách ID
+            String[] managerIds = managers.stream()
+                    .map(user -> String.valueOf(user.getId()))
+                    .toArray(String[]::new);
+
+            String title = "🔔 Đơn hàng mới #" + order.getId();
+            String content = "Khách hàng " + order.getUser().getFullName() +
+                    " vừa đặt đơn trị giá " + order.getFinalPrice() + "đ.";
+
+            oneSignalService.sendToMultipleUsers(managerIds, title, content);
+            log.info("Sent push notification to {} managers", managerIds.length);
+
+        } catch (Exception e) {
+            log.error("Failed to send push notification to managers", e);
+        }
+    }
+
+    /**
+     * Gửi thông báo OneSignal cho User khi trạng thái đơn hàng thay đổi
+     */
+    private void sendNotificationToUser(Order order, OrderStatus status) {
+        try {
+            String userId = String.valueOf(order.getUser().getId());
+            String title = "Cập nhật đơn hàng #" + order.getId();
+            String content = "";
+
+            switch (status) {
+                case MAKING:
+                    content = "Quán đang pha chế đồ uống cho bạn.";
+                    break;
+                case SHIPPING:
+                    content = "Shipper đang giao trà sữa đến cho bạn!";
+                    break;
+                case READY:
+                    content = "Đồ uống đã sẵn sàng tại quầy để bạn lấy.";
+                    break;
+                case DONE:
+                    content = "Đơn hàng hoàn tất. Chúc bạn ngon miệng!";
+                    break;
+                case CANCELED:
+                    content = "Đơn hàng của bạn đã bị hủy.";
+                    break;
+                default:
+                    // Không gửi thông báo cho PENDING hoặc các trạng thái khác
+                    return;
+            }
+
+            oneSignalService.sendToUser(userId, title, content);
+            log.info("Sent push notification to user {}", userId);
+
+        } catch (Exception e) {
+            log.error("Failed to send push notification to user", e);
+        }
+    }
+
+    // ==================================================================================
+
     private void validateStatusTransition(OrderStatus currentStatus, OrderStatus newStatus) {
-        // PENDING can go to MAKING or CANCELED
         if (currentStatus == OrderStatus.PENDING) {
             if (newStatus != OrderStatus.MAKING && newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order can only be moved to MAKING or CANCELED from PENDING");
+                throw new BusinessException("Order transition invalid from PENDING");
             }
         }
-        // MAKING can go to SHIPPING (Delivery), READY (Pickup) or CANCELED
         else if (currentStatus == OrderStatus.MAKING) {
-            if (newStatus != OrderStatus.SHIPPING && 
-                newStatus != OrderStatus.READY && 
-                newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order can only be moved to SHIPPING, READY or CANCELED from MAKING");
+            if (newStatus != OrderStatus.SHIPPING &&
+                    newStatus != OrderStatus.READY &&
+                    newStatus != OrderStatus.CANCELED) {
+                throw new BusinessException("Order transition invalid from MAKING");
             }
         }
-        // SHIPPING can go to DONE or CANCELED
         else if (currentStatus == OrderStatus.SHIPPING) {
             if (newStatus != OrderStatus.DONE && newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order can only be moved to DONE or CANCELED from SHIPPING");
+                throw new BusinessException("Order transition invalid from SHIPPING");
             }
         }
-        // READY can go to DONE or CANCELED
         else if (currentStatus == OrderStatus.READY) {
             if (newStatus != OrderStatus.DONE && newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order can only be moved to DONE or CANCELED from READY");
+                throw new BusinessException("Order transition invalid from READY");
             }
         }
-        // DONE and CANCELED are final states
         else if (currentStatus == OrderStatus.DONE || currentStatus == OrderStatus.CANCELED) {
             throw new BusinessException("Cannot change status of completed or canceled order");
         }
     }
-    
+
     private OrderDto mapToDto(Order order) {
         OrderDto dto = new OrderDto();
         dto.setId(order.getId());
@@ -401,20 +419,19 @@ public class OrderService {
         dto.setPromotionCode(order.getPromotion() != null ? order.getPromotion().getCode() : null);
         dto.setCreatedAt(order.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
         dto.setUpdatedAt(order.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
-        
+
         List<OrderItemDto> itemDtos = order.getItems().stream()
-            .map(this::mapItemToDto)
-            .collect(Collectors.toList());
+                .map(this::mapItemToDto)
+                .collect(Collectors.toList());
         dto.setItems(itemDtos);
-        
+
         return dto;
     }
-    
+
     private OrderItemDto mapItemToDto(OrderItem item) {
         OrderItemDto dto = new OrderItemDto();
         dto.setId(item.getId());
         dto.setDrinkName(item.getDrinkNameSnapshot());
-        // FIX: Thêm drinkImage từ Drink entity
         if (item.getDrink() != null) {
             dto.setDrinkImage(item.getDrink().getImageUrl());
         }
@@ -422,12 +439,12 @@ public class OrderService {
         dto.setQuantity(item.getQuantity());
         dto.setItemPrice(item.getItemPrice());
         dto.setNote(item.getNote());
-        
+
         List<OrderItemToppingDto> toppingDtos = item.getToppings().stream()
-            .map(t -> new OrderItemToppingDto(t.getId(), t.getToppingNameSnapshot(), t.getPriceSnapshot()))
-            .collect(Collectors.toList());
+                .map(t -> new OrderItemToppingDto(t.getId(), t.getToppingNameSnapshot(), t.getPriceSnapshot()))
+                .collect(Collectors.toList());
         dto.setToppings(toppingDtos);
-        
+
         return dto;
     }
 }

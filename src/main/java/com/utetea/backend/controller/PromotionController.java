@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.utetea.backend.service.OneSignalService;
 
 @RestController
 @RequestMapping("/api/promotions")
@@ -21,6 +22,7 @@ import java.util.List;
 public class PromotionController {
     
     private final PromotionService promotionService;
+    private final OneSignalService oneSignalService;
     
     // ========== USER APIs ==========
     
@@ -57,12 +59,22 @@ public class PromotionController {
         List<PromotionDto> promotions = promotionService.getAllPromotions();
         return ResponseEntity.ok(ApiResponse.success(promotions));
     }
-    
+
     @PostMapping("/manager")
     @PreAuthorize("hasRole('MANAGER')")
     public ResponseEntity<ApiResponse<PromotionDto>> createPromotion(
-            @Valid @RequestBody CreatePromotionRequest request) {
+            @Valid @RequestBody CreatePromotionRequest request,
+            @RequestParam(defaultValue = "false") boolean sendNotification // Thêm tham số này
+    ) {
         PromotionDto promotion = promotionService.createPromotion(request);
+
+        // LOGIC GỬI THÔNG BÁO
+        if (sendNotification) {
+            String title = "🎁 Ưu đãi mới: " + promotion.getDescription();
+            String content = "Nhập mã " + promotion.getCode() + " để nhận ưu đãi ngay! HSD: " + promotion.getEndDate();
+            oneSignalService.sendToAll(title, content);
+        }
+
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Tạo voucher thành công", promotion));
     }
