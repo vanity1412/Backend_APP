@@ -19,6 +19,8 @@ public class OneSignalService {
     // Hàm gửi request cơ bản
     private void sendRequest(String jsonBody) {
         try {
+            log.info("OneSignal Request Body: {}", jsonBody);
+            
             URL url = new URL(ONESIGNAL_API_URL);
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setUseCaches(false);
@@ -37,7 +39,26 @@ public class OneSignalService {
             }
 
             int httpResponse = con.getResponseCode();
-            log.info("OneSignal Response Code: {}", httpResponse);
+            
+            // Đọc response body để debug
+            String responseBody = "";
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(
+                            httpResponse >= 400 ? con.getErrorStream() : con.getInputStream(), 
+                            StandardCharsets.UTF_8))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                responseBody = sb.toString();
+            }
+            
+            if (httpResponse >= 200 && httpResponse < 300) {
+                log.info("OneSignal Response: {} - {}", httpResponse, responseBody);
+            } else {
+                log.error("OneSignal Error: {} - {}", httpResponse, responseBody);
+            }
 
         } catch (Throwable t) {
             log.error("Error sending OneSignal notification", t);
