@@ -4,6 +4,7 @@ import com.utetea.backend.model.Review;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -40,4 +41,8 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     
     @Query("SELECT r.rating, COUNT(r) FROM Review r WHERE r.drink.id = :drinkId GROUP BY r.rating")
     List<Object[]> getRatingDistributionByDrinkId(@Param("drinkId") Long drinkId);
+    
+    // Delete all reviews by user ID
+    @Modifying
+    void deleteByUserId(Long userId);
 }

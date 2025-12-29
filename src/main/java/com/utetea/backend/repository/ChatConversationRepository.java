@@ -3,6 +3,7 @@ package com.utetea.backend.repository;
 import com.utetea.backend.model.ChatConversation;
 import com.utetea.backend.model.ConversationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -48,4 +49,8 @@ public interface ChatConversationRepository extends JpaRepository<ChatConversati
 
     @Query("SELECT COUNT(c) FROM ChatConversation c WHERE c.status = 'WAITING'")
     Long countWaitingConversations();
+    
+    // Delete all conversations by user ID
+    @Modifying
+    void deleteByUserId(Long userId);
 }

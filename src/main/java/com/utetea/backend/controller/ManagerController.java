@@ -167,6 +167,16 @@ public class ManagerController {
         return ResponseEntity.ok(ApiResponse.success(users));
     }
     
+    @DeleteMapping("/users/{userId}")
+    @Operation(summary = "Delete User", description = "Xóa tài khoản người dùng (backup doanh thu trước khi xóa)")
+    @PreAuthorize("hasRole('MANAGER')")
+    public ResponseEntity<ApiResponse<String>> deleteUser(@PathVariable Long userId) {
+        log.info("DELETE /api/manager/users/{}", userId);
+        
+        managerService.deleteUser(userId);
+        return ResponseEntity.ok(ApiResponse.success("Đã xóa tài khoản người dùng thành công"));
+    }
+    
     // ==================== REVENUE STATISTICS ====================
     
     @GetMapping("/statistics/revenue")

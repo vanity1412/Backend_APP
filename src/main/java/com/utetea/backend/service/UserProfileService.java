@@ -4,25 +4,41 @@ import com.utetea.backend.dto.UpdateProfileRequest;
 import com.utetea.backend.dto.UserProfileDto;
 import com.utetea.backend.exception.BusinessException;
 import com.utetea.backend.exception.ResourceNotFoundException;
-import com.utetea.backend.model.User;
-import com.utetea.backend.repository.UserRepository;
-import com.utetea.backend.repository.CartRepository;
+import com.utetea.backend.model.*;
+import com.utetea.backend.repository.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 import com.utetea.backend.dto.ChangePasswordRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserProfileService {
 
     private final UserRepository userRepository;
     private final CartRepository cartRepository;
+    private final OrderRepository orderRepository;
+    private final ReviewRepository reviewRepository;
+    private final SpinRewardRepository spinRewardRepository;
+    private final GroupOrderRepository groupOrderRepository;
+    private final GroupOrderMemberRepository groupOrderMemberRepository;
+    private final GroupOrderItemRepository groupOrderItemRepository;
+    private final GroupChatMessageRepository groupChatMessageRepository;
+    private final ChatConversationRepository chatConversationRepository;
+    private final DeletedUserOrderBackupRepository deletedUserOrderBackupRepository;
     private final AvatarUploadService avatarUploadService;
     private final PasswordEncoder passwordEncoder;
+    private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public UserProfileDto getProfile(String username) {
@@ -103,15 +119,147 @@ public class UserProfileService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException("User not found"));
 
-        // Thực hiện xóa cart trước để không xung đột khóa ngoại
-        cartRepository.deleteByUserId(user.getId());
+        Long userId = user.getId();
+        log.info("Deleting account for user: {} (ID: {})", username, userId);
 
-        // Thực hiện xóa
-        userRepository.delete(user);
-
-        // Tùy chọn: Nếu muốn khóa thay vì xóa vĩnh viễn:
-        // user.setIsBlocked(true);
-        // userRepository.save(user);
+        try {
+            // BƯỚC 1: Backup orders trước khi xóa (để manager vẫn quản lý được doanh thu)
+            // Chỉ backup các order DONE để tính doanh thu
+            log.info("Backing up DONE orders for user {}", userId);
+            backupUserOrders(user);
+            
+            // BƯỚC 2: Xóa các dữ liệu liên quan theo thứ tự để tránh lỗi khóa ngoại
+            
+            // 1. Xóa cart và cart items
+            log.info("Deleting cart for user {}", userId);
+            cartRepository.deleteByUserId(userId);
+            
+            // 2. Xóa reviews
+            log.info("Deleting reviews for user {}", userId);
+            reviewRepository.deleteByUserId(userId);
+            
+            // 3. Xóa spin rewards (vouchers từ vòng quay)
+            log.info("Deleting spin rewards for user {}", userId);
+            spinRewardRepository.deleteByUserId(userId);
+            
+            // 4. Xóa group order items của user (khi user tham gia group order của người khác)
+            log.info("Deleting group order items for user {}", userId);
+            groupOrderItemRepository.deleteByUserId(userId);
+            
+            // 5. Xóa group order members của user (khi user tham gia group order của người khác)
+            log.info("Deleting group order members for user {}", userId);
+            groupOrderMemberRepository.deleteByUserId(userId);
+            
+            // 6. Xóa group chat messages trước (vì có FK đến group_orders)
+            log.info("Deleting group chat messages for user {}", userId);
+            groupChatMessageRepository.deleteByHostUserId(userId);
+            
+            // 7. Xóa group orders (nếu là host)
+            log.info("Deleting group orders for user {}", userId);
+            groupOrderRepository.deleteByHostUserId(userId);
+            
+            // 8. Xóa chat conversations
+            log.info("Deleting chat conversations for user {}", userId);
+            chatConversationRepository.deleteByUserId(userId);
+            
+            // 9. Xóa orders (lịch sử đơn hàng) - đã backup ở trên
+            log.info("Deleting orders for user {}", userId);
+            orderRepository.deleteByUserId(userId);
+            
+            // 10. Cuối cùng xóa user
+            log.info("Deleting user {}", userId);
+            userRepository.delete(user);
+            
+            log.info("Successfully deleted account for user: {} (ID: {})", username, userId);
+            
+        } catch (Exception e) {
+            log.error("Error deleting account for user {}: {}", userId, e.getMessage(), e);
+            throw new BusinessException("Không thể xóa tài khoản: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Backup tất cả orders DONE của user vào bảng DeletedUserOrderBackup
+     * Để manager vẫn có thể quản lý doanh thu, revenue, cảnh báo
+     */
+    private void backupUserOrders(User user) {
+        List<Order> orders = orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(user.getId());
+        int backupCount = 0;
+        
+        for (Order order : orders) {
+            // Chỉ backup các order DONE (đã hoàn thành) để tính doanh thu
+            if (order.getStatus() != OrderStatus.DONE) {
+                continue;
+            }
+            
+            // Tạo JSON cho order items
+            String orderItemsJson = createOrderItemsJson(order);
+            
+            // Truncate phone nếu quá dài
+            String phone = user.getPhone();
+            if (phone != null && phone.length() > 250) {
+                phone = phone.substring(0, 250);
+            }
+            
+            DeletedUserOrderBackup backup = DeletedUserOrderBackup.builder()
+                    .deletedUserId(user.getId())
+                    .deletedUsername(user.getUsername())
+                    .deletedUserPhone(phone)
+                    .originalOrderId(order.getId())
+                    .store(order.getStore())
+                    .orderType(order.getType())
+                    .orderStatus(order.getStatus())
+                    .totalPrice(order.getTotalPrice())
+                    .discount(order.getDiscount())
+                    .finalPrice(order.getFinalPrice())
+                    .paymentMethod(order.getPaymentMethod())
+                    .orderCreatedAt(order.getCreatedAt())
+                    .orderItemsJson(orderItemsJson)
+                    .note("Auto backup when user deleted account")
+                    .build();
+            
+            deletedUserOrderBackupRepository.save(backup);
+            backupCount++;
+            log.debug("Backed up order {} for user {}", order.getId(), user.getId());
+        }
+        
+        log.info("Backed up {} DONE orders for user {}", backupCount, user.getId());
+    }
+    
+    /**
+     * Tạo JSON string chứa thông tin chi tiết order items
+     */
+    private String createOrderItemsJson(Order order) {
+        try {
+            List<Map<String, Object>> itemsList = new ArrayList<>();
+            
+            for (OrderItem item : order.getItems()) {
+                Map<String, Object> itemMap = new HashMap<>();
+                itemMap.put("drinkId", item.getDrink() != null ? item.getDrink().getId() : null);
+                itemMap.put("drinkName", item.getDrinkNameSnapshot());
+                itemMap.put("sizeName", item.getSizeNameSnapshot());
+                itemMap.put("quantity", item.getQuantity());
+                itemMap.put("itemPrice", item.getItemPrice());
+                itemMap.put("note", item.getNote());
+                
+                // Thêm toppings
+                List<Map<String, Object>> toppingsList = new ArrayList<>();
+                for (OrderItemTopping topping : item.getToppings()) {
+                    Map<String, Object> toppingMap = new HashMap<>();
+                    toppingMap.put("toppingName", topping.getToppingNameSnapshot());
+                    toppingMap.put("toppingPrice", topping.getPriceSnapshot());
+                    toppingsList.add(toppingMap);
+                }
+                itemMap.put("toppings", toppingsList);
+                
+                itemsList.add(itemMap);
+            }
+            
+            return objectMapper.writeValueAsString(itemsList);
+        } catch (Exception e) {
+            log.warn("Failed to create order items JSON: {}", e.getMessage());
+            return "[]";
+        }
     }
 
     private UserProfileDto mapToProfileDto(User user) {

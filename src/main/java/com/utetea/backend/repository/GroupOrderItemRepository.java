@@ -26,4 +26,8 @@ public interface GroupOrderItemRepository extends JpaRepository<GroupOrderItem, 
     
     @Query("SELECT COUNT(i) FROM GroupOrderItem i WHERE i.groupOrder.id = :groupOrderId AND i.user.id = :userId")
     int countByGroupOrderIdAndUserId(@Param("groupOrderId") Long groupOrderId, @Param("userId") Long userId);
+    
+    // Xóa tất cả items của user (khi user xóa tài khoản)
+    @Modifying
+    void deleteByUserId(Long userId);
 }

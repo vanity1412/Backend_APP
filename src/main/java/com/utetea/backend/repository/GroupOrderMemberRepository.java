@@ -27,4 +27,8 @@ public interface GroupOrderMemberRepository extends JpaRepository<GroupOrderMemb
     @Modifying
     @Query("DELETE FROM GroupOrderMember m WHERE m.groupOrder.id = :groupOrderId AND m.user.id = :userId")
     void deleteByGroupOrderIdAndUserId(@Param("groupOrderId") Long groupOrderId, @Param("userId") Long userId);
+    
+    // Xóa tất cả membership của user (khi user xóa tài khoản)
+    @Modifying
+    void deleteByUserId(Long userId);
 }

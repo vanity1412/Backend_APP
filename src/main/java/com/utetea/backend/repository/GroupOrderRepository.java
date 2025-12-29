@@ -3,6 +3,7 @@ package com.utetea.backend.repository;
 import com.utetea.backend.model.GroupOrder;
 import com.utetea.backend.model.GroupOrderStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -76,4 +77,8 @@ public interface GroupOrderRepository extends JpaRepository<GroupOrder, Long> {
                                             @Param("now") LocalDateTime now);
     
     boolean existsByInviteCode(String inviteCode);
+    
+    // Delete all group orders by host user ID
+    @Modifying
+    void deleteByHostUserId(Long userId);
 }
