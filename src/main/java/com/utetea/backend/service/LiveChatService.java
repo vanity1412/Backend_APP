@@ -25,6 +25,7 @@ public class LiveChatService {
     private final UserRepository userRepository;
     private final StoreRepository storeRepository;
     private final LiveChatWebSocketService webSocketService;
+    private final OneSignalService oneSignalService;
 
     /**
      * User bắt đầu cuộc hội thoại mới hoặc tiếp tục conversation đang mở
@@ -63,6 +64,11 @@ public class LiveChatService {
                 // Notify qua WebSocket
                 MessageDto msgDto = mapMessageToDto(message);
                 webSocketService.notifyNewMessage(conversation.getId(), msgDto);
+                
+                // Gửi push notification cho Manager của store và Admin
+                sendPushToManagersAndAdmin(store, user, "💬 Tin nhắn tư vấn mới", 
+                        user.getFullName() + ": " + truncateMessage(request.getInitialMessage()), 
+                        conversation.getId());
             }
             
             log.info("User {} continuing existing conversation #{} at store {}", username, conversation.getId(), store.getStoreName());
@@ -97,6 +103,11 @@ public class LiveChatService {
         // Notify managers về conversation mới (chỉ managers quản lý store này)
         ConversationDto dto = mapToDto(conversation);
         webSocketService.notifyNewConversation(dto);
+
+        // Gửi push notification cho Manager của store và Admin
+        sendPushToManagersAndAdmin(store, user, "💬 Yêu cầu tư vấn mới", 
+                user.getFullName() + " cần tư vấn tại " + store.getStoreName(), 
+                conversation.getId());
 
         return dto;
     }
@@ -161,6 +172,20 @@ public class LiveChatService {
         // Notify qua WebSocket
         MessageDto dto = mapMessageToDto(message);
         webSocketService.notifyNewMessage(conversation.getId(), dto);
+
+        // Gửi push notification
+        if (isUser) {
+            // User gửi tin nhắn → Thông báo cho Manager của store và Admin
+            sendPushToManagersAndAdmin(conversation.getStore(), sender, "💬 Tin nhắn tư vấn mới",
+                    sender.getFullName() + ": " + truncateMessage(request.getContent()),
+                    conversation.getId());
+        } else {
+            // Manager/Admin trả lời → Thông báo cho User
+            sendPushToUser(conversation.getUser(), "💬 Phản hồi từ " + 
+                    (conversation.getStore() != null ? conversation.getStore().getStoreName() : "Nhân viên"),
+                    sender.getFullName() + ": " + truncateMessage(request.getContent()),
+                    conversation.getId());
+        }
 
         return dto;
     }
@@ -404,5 +429,62 @@ public class LiveChatService {
             .isRead(m.getIsRead())
             .createdAt(m.getCreatedAt() != null ? m.getCreatedAt().atZone(ZoneId.systemDefault()).toLocalDateTime() : null)
             .build();
+    }
+
+    // ==================== PUSH NOTIFICATION HELPERS ====================
+
+    /**
+     * Gửi push notification cho Manager của store và tất cả Admin
+     */
+    private void sendPushToManagersAndAdmin(Store store, User excludeUser, String title, String content, Long conversationId) {
+        try {
+            // Lấy tất cả Admin
+            List<User> admins = userRepository.findByRole(UserRole.ADMIN);
+            
+            // Lấy Manager quản lý store này
+            List<User> managers = store != null ? 
+                    userRepository.findManagersByStoreId(store.getId()) : 
+                    userRepository.findByRole(UserRole.MANAGER);
+            
+            // Gộp danh sách và loại bỏ user gửi tin nhắn
+            java.util.Set<Long> userIds = new java.util.HashSet<>();
+            admins.forEach(u -> userIds.add(u.getId()));
+            managers.forEach(u -> userIds.add(u.getId()));
+            userIds.remove(excludeUser.getId());
+            
+            if (userIds.isEmpty()) return;
+            
+            String[] userIdsArray = userIds.stream()
+                    .map(String::valueOf)
+                    .toArray(String[]::new);
+            
+            oneSignalService.sendToMultipleUsers(userIdsArray, title, content, 
+                    NotificationType.LIVE_CHAT, conversationId);
+            
+            log.info("Sent live chat push notification to {} managers/admins", userIdsArray.length);
+        } catch (Exception e) {
+            log.error("Failed to send push notification for live chat", e);
+        }
+    }
+
+    /**
+     * Gửi push notification cho User khi Manager/Admin trả lời
+     */
+    private void sendPushToUser(User user, String title, String content, Long conversationId) {
+        try {
+            oneSignalService.sendToUser(String.valueOf(user.getId()), title, content,
+                    NotificationType.LIVE_CHAT, conversationId);
+            log.info("Sent live chat push notification to user {}", user.getId());
+        } catch (Exception e) {
+            log.error("Failed to send push notification to user", e);
+        }
+    }
+
+    /**
+     * Cắt ngắn tin nhắn để hiển thị trong notification
+     */
+    private String truncateMessage(String message) {
+        if (message == null) return "";
+        return message.length() > 50 ? message.substring(0, 50) + "..." : message;
     }
 }

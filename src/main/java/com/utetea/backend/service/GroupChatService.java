@@ -9,6 +9,7 @@ import com.utetea.backend.repository.GroupOrderMemberRepository;
 import com.utetea.backend.repository.GroupOrderRepository;
 import com.utetea.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ public class GroupChatService {
     private final GroupOrderMemberRepository memberRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final OneSignalService oneSignalService;
     
     @Transactional
     public GroupChatMessageDto sendMessage(String username, Long groupOrderId, SendGroupChatRequest request) {
@@ -57,8 +59,10 @@ public class GroupChatService {
         message = chatMessageRepository.save(message);
         GroupChatMessageDto dto = toDto(message);
         
-        // Broadcast tin nhắn qua WebSocket
+        // Broadcast tin nhắn qua WebSocket (realtime trong app)
         messagingTemplate.convertAndSend("/topic/group-chat/" + groupOrderId, dto);
+        
+        // KHÔNG gửi push notification cho group chat - chỉ dùng WebSocket
         
         return dto;
     }
@@ -131,5 +135,44 @@ public class GroupChatService {
                 .messageType(message.getMessageType())
                 .createdAt(message.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * Gửi push notification cho các thành viên khác trong nhóm
+     */
+    private void sendPushToGroupMembers(GroupOrder groupOrder, User sender, GroupChatMessageDto message) {
+        try {
+            // Lấy tất cả thành viên trong nhóm
+            List<GroupOrderMember> members = memberRepository.findByGroupOrderIdWithUser(groupOrder.getId());
+            
+            // Lọc ra các user khác (không phải người gửi)
+            String[] userIds = members.stream()
+                    .map(m -> m.getUser().getId())
+                    .filter(id -> !id.equals(sender.getId()))
+                    .map(String::valueOf)
+                    .toArray(String[]::new);
+            
+            if (userIds.length == 0) return;
+            
+            // Sử dụng getName() thay vì getGroupName()
+            String groupName = groupOrder.getName() != null ? groupOrder.getName() : "Nhóm đặt hàng";
+            String title = "💬 " + groupName;
+            String content = sender.getFullName() + ": " + truncateMessage(message.getContent());
+            
+            oneSignalService.sendToMultipleUsers(userIds, title, content,
+                    NotificationType.GROUP_CHAT, groupOrder.getId());
+            
+        } catch (Exception e) {
+            // Log error but don't fail the message send
+            System.err.println("Failed to send group chat push notification: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Cắt ngắn tin nhắn để hiển thị trong notification
+     */
+    private String truncateMessage(String message) {
+        if (message == null) return "";
+        return message.length() > 50 ? message.substring(0, 50) + "..." : message;
     }
 }

@@ -168,8 +168,15 @@ public class OneSignalService {
 
     /**
      * Lưu thông báo vào database
+     * KHÔNG lưu cho GROUP_CHAT và LIVE_CHAT (chỉ gửi push notification realtime)
      */
     private void saveNotificationToDb(User user, String title, String content, NotificationType type, Long relatedId) {
+        // Không lưu notification cho Group Chat và Live Chat
+        if (type == NotificationType.GROUP_CHAT || type == NotificationType.LIVE_CHAT) {
+            log.debug("Skipping DB save for {} notification (realtime only)", type);
+            return;
+        }
+        
         try {
             Notification notification = Notification.builder()
                     .user(user)
