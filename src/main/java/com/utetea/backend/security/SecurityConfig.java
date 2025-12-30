@@ -100,6 +100,10 @@ public class SecurityConfig {
                         // Predictive Order endpoints
                         .requestMatchers("/api/predictive-order/**").hasAnyRole("USER", "MANAGER", "ADMIN")
                         
+                        // Notification endpoints - User và Manager đều có thể xem thông báo của mình
+                        .requestMatchers("/api/notifications/send").hasAnyRole("MANAGER", "ADMIN")
+                        .requestMatchers("/api/notifications/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        
                         // All other requests need authentication
                         .anyRequest().authenticated()
                 )

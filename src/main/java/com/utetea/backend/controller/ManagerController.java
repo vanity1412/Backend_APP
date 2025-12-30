@@ -264,14 +264,14 @@ public class ManagerController {
         return ResponseEntity.ok(ApiResponse.success("Đã bỏ gán cửa hàng khỏi Manager", user));
     }
     
-    @GetMapping("/users/{userId}/is-super-manager")
-    @Operation(summary = "Check Super Manager", description = "Kiểm tra Manager có phải Super Manager (quản lý tất cả) không")
+    @GetMapping("/users/{userId}/has-stores")
+    @Operation(summary = "Check Has Assigned Stores", description = "Kiểm tra Manager có được gán store nào không")
     @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Boolean>> isSuperManager(@PathVariable Long userId) {
-        log.info("GET /api/manager/users/{}/is-super-manager", userId);
+    public ResponseEntity<ApiResponse<Boolean>> hasAssignedStores(@PathVariable Long userId) {
+        log.info("GET /api/manager/users/{}/has-stores", userId);
         
-        boolean isSuperManager = managerService.isSuperManager(userId);
-        return ResponseEntity.ok(ApiResponse.success(isSuperManager));
+        boolean hasStores = managerService.hasAssignedStores(userId);
+        return ResponseEntity.ok(ApiResponse.success(hasStores));
     }
     
     // ==================== REVENUE STATISTICS ====================

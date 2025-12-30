@@ -83,10 +83,10 @@ public class LiveChatController {
     // ==================== MANAGER APIs ====================
 
     /**
-     * Manager lấy danh sách tất cả conversations
+     * Manager lấy danh sách tất cả conversations (theo stores được gán)
      */
     @GetMapping("/manager/conversations")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<ConversationListDto>>> getManagerConversations(
             @AuthenticationPrincipal UserDetails userDetails) {
         List<ConversationListDto> conversations = chatService.getManagerConversations(userDetails.getUsername());
@@ -94,12 +94,13 @@ public class LiveChatController {
     }
 
     /**
-     * Đếm số conversation đang chờ
+     * Đếm số conversation đang chờ (theo stores của Manager)
      */
     @GetMapping("/manager/conversations/waiting-count")
-    @PreAuthorize("hasRole('MANAGER')")
-    public ResponseEntity<ApiResponse<Long>> getWaitingCount() {
-        Long count = chatService.countWaitingConversations();
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Long>> getWaitingCount(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Long count = chatService.countWaitingConversations(userDetails.getUsername());
         return ResponseEntity.ok(ApiResponse.success(count));
     }
 }

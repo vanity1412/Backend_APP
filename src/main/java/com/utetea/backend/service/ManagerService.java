@@ -74,17 +74,24 @@ public class ManagerService {
     
     /**
      * Lấy danh sách store IDs mà manager được phép quản lý
-     * ADMIN và Super Manager (không gán store nào) -> trả về null (quản lý tất cả)
+     * ADMIN -> trả về null (quản lý tất cả)
+     * MANAGER không có store nào -> trả về empty list (không xem được gì)
+     * MANAGER có stores -> trả về list store IDs
      */
     private List<Long> getManagedStoreIds(User manager) {
         // ADMIN luôn quản lý tất cả
         if (manager.getRole() == UserRole.ADMIN) {
             return null;
         }
-        if (manager.isSuperManager()) {
-            return null; // Super Manager - quản lý tất cả
+        
+        // MANAGER phải có stores được gán, nếu không có thì trả về empty list
+        Set<Store> managedStores = manager.getManagedStores();
+        if (managedStores == null || managedStores.isEmpty()) {
+            log.warn("Manager {} has no assigned stores", manager.getUsername());
+            return new ArrayList<>(); // Trả về empty list - không xem được gì
         }
-        return manager.getManagedStores().stream()
+        
+        return managedStores.stream()
             .map(Store::getId)
             .collect(Collectors.toList());
     }
@@ -106,9 +113,23 @@ public class ManagerService {
     public DashboardSummaryDto getDashboardSummary() {
         User manager = getCurrentManager();
         List<Long> storeIds = getManagedStoreIds(manager);
+        boolean isAdmin = manager.getRole() == UserRole.ADMIN;
         
-        log.info("Getting dashboard summary for manager: {}, stores: {}", 
-            manager.getUsername(), storeIds == null ? "ALL" : storeIds);
+        log.info("Getting dashboard summary for manager: {}, stores: {}, isAdmin: {}", 
+            manager.getUsername(), storeIds == null ? "ALL" : storeIds, isAdmin);
+        
+        // Nếu Manager không có store nào được gán -> trả về empty dashboard
+        if (storeIds != null && storeIds.isEmpty()) {
+            log.warn("Manager {} has no assigned stores, returning empty dashboard", manager.getUsername());
+            DashboardSummaryDto emptyDashboard = new DashboardSummaryDto();
+            emptyDashboard.setTotalRevenue(BigDecimal.ZERO);
+            emptyDashboard.setTotalOrders(0L);
+            emptyDashboard.setPendingOrders(0L);
+            emptyDashboard.setCompletedOrders(0L);
+            emptyDashboard.setCanceledOrders(0L);
+            emptyDashboard.setTopSellingDrinks(new ArrayList<>());
+            return emptyDashboard;
+        }
         
         try {
             Long pendingOrders;
@@ -118,7 +139,7 @@ public class ManagerService {
             BigDecimal totalRevenue;
             
             if (storeIds == null) {
-                // Super Manager - xem tất cả
+                // ADMIN - xem tất cả + backup
                 pendingOrders = orderRepository.countByStatus(OrderStatus.PENDING);
                 completedOrders = orderRepository.countByStatus(OrderStatus.DONE);
                 canceledOrders = orderRepository.countByStatus(OrderStatus.CANCELED);
@@ -129,14 +150,14 @@ public class ManagerService {
                     .setParameter("status", OrderStatus.DONE)
                     .getSingleResult();
                 
-                // Thêm doanh thu từ backup
+                // ADMIN mới cộng backup revenue
                 BigDecimal backupRevenue = getBackupTotalRevenue();
                 totalRevenue = totalRevenue.add(backupRevenue);
                 
                 Long backupOrderCount = deletedUserOrderBackupRepository.count();
                 totalOrders = totalOrders + backupOrderCount;
             } else {
-                // Store Manager - chỉ xem stores được gán
+                // Store Manager - chỉ xem stores được gán (KHÔNG cộng backup)
                 pendingOrders = orderRepository.countByStoreIdInAndStatus(storeIds, OrderStatus.PENDING);
                 completedOrders = orderRepository.countByStoreIdInAndStatus(storeIds, OrderStatus.DONE);
                 canceledOrders = orderRepository.countByStoreIdInAndStatus(storeIds, OrderStatus.CANCELED);
@@ -151,10 +172,7 @@ public class ManagerService {
                     .setParameter("status", OrderStatus.DONE)
                     .setParameter("storeIds", storeIds)
                     .getSingleResult();
-                
-                // Thêm doanh thu từ backup theo stores
-                BigDecimal backupRevenue = getBackupTotalRevenueByStores(storeIds);
-                totalRevenue = totalRevenue.add(backupRevenue);
+                // Manager không cộng backup - chỉ xem doanh thu hiện tại của store
             }
             
             // Get top selling drinks (filtered by stores if needed)
@@ -221,7 +239,7 @@ public class ManagerService {
     }
     
     /**
-     * Lấy tổng doanh thu từ backup (user đã xóa)
+     * Lấy tổng doanh thu từ backup (user đã xóa) - CHỈ CHO ADMIN
      */
     private BigDecimal getBackupTotalRevenue() {
         try {
@@ -236,23 +254,6 @@ public class ManagerService {
         }
     }
     
-    /**
-     * Lấy tổng doanh thu từ backup theo stores
-     */
-    private BigDecimal getBackupTotalRevenueByStores(List<Long> storeIds) {
-        try {
-            String query = "SELECT COALESCE(SUM(b.finalPrice), 0) FROM DeletedUserOrderBackup b WHERE b.orderStatus = :status AND b.store.id IN :storeIds";
-            BigDecimal result = entityManager.createQuery(query, BigDecimal.class)
-                .setParameter("status", OrderStatus.DONE)
-                .setParameter("storeIds", storeIds)
-                .getSingleResult();
-            return result != null ? result : BigDecimal.ZERO;
-        } catch (Exception e) {
-            log.warn("Error getting backup revenue by stores: {}", e.getMessage());
-            return BigDecimal.ZERO;
-        }
-    }
-    
     @Transactional(readOnly = true)
     public Page<OrderDto> getOrdersByStatus(OrderStatus status, Pageable pageable) {
         User manager = getCurrentManager();
@@ -260,8 +261,14 @@ public class ManagerService {
         
         log.info("Getting orders with status: {}, stores: {}", status, storeIds == null ? "ALL" : storeIds);
         
+        // Nếu Manager không có store nào được gán -> trả về empty page
+        if (storeIds != null && storeIds.isEmpty()) {
+            log.warn("Manager {} has no assigned stores, returning empty orders", manager.getUsername());
+            return Page.empty(pageable);
+        }
+        
         if (storeIds == null) {
-            // Super Manager - xem tất cả
+            // ADMIN - xem tất cả
             if (status == null) {
                 return orderService.getAllOrders(pageable);
             }
@@ -281,13 +288,19 @@ public class ManagerService {
     @Transactional
     public OrderDto updateOrderStatus(Long orderId, OrderStatus newStatus) {
         User manager = getCurrentManager();
+        List<Long> storeIds = getManagedStoreIds(manager);
         
         // Lấy order để kiểm tra quyền
         var order = orderRepository.findById(orderId)
             .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         
-        // Kiểm tra quyền truy cập store
-        if (!manager.isSuperManager()) {
+        // Nếu Manager không có store nào được gán -> không có quyền
+        if (storeIds != null && storeIds.isEmpty()) {
+            throw new BusinessException("Bạn chưa được gán quản lý chi nhánh nào");
+        }
+        
+        // Kiểm tra quyền truy cập store (ADMIN bỏ qua)
+        if (storeIds != null) {
             validateStoreAccess(manager, order.getStore().getId());
         }
         
@@ -437,12 +450,13 @@ public class ManagerService {
         User manager = getCurrentManager();
         
         // ADMIN xem tất cả stores
-        if (manager.getRole() == UserRole.ADMIN || manager.isSuperManager()) {
+        if (manager.getRole() == UserRole.ADMIN) {
             return storeRepository.findAll().stream()
                 .map(this::mapToStoreDto)
                 .collect(Collectors.toList());
         }
         
+        // Manager chỉ xem stores được gán
         return manager.getManagedStores().stream()
             .map(this::mapToStoreDto)
             .collect(Collectors.toList());
@@ -540,13 +554,13 @@ public class ManagerService {
     }
     
     /**
-     * Kiểm tra Manager có phải Super Manager không
+     * Kiểm tra Manager có được gán store nào không
      */
     @Transactional(readOnly = true)
-    public boolean isSuperManager(Long managerId) {
+    public boolean hasAssignedStores(Long managerId) {
         User manager = userRepository.findByIdWithManagedStores(managerId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + managerId));
-        return manager.isSuperManager();
+        return manager.hasAssignedStores();
     }
     
     private StoreDto mapToStoreDto(Store store) {
@@ -607,60 +621,87 @@ public class ManagerService {
     
     @Transactional(readOnly = true)
     public com.utetea.backend.dto.RevenueStatisticsDto getRevenueStatistics(Integer days, Integer months) {
-        log.info("Getting revenue statistics - days: {}, months: {}", days, months);
+        User manager = getCurrentManager();
+        List<Long> storeIds = getManagedStoreIds(manager);
+        boolean isAdmin = manager.getRole() == UserRole.ADMIN;
+        
+        log.info("Getting revenue statistics - days: {}, months: {}, stores: {}, isAdmin: {}", 
+            days, months, storeIds == null ? "ALL" : storeIds, isAdmin);
         
         com.utetea.backend.dto.RevenueStatisticsDto stats = new com.utetea.backend.dto.RevenueStatisticsDto();
         
+        // Nếu Manager không có store nào được gán -> trả về empty stats
+        if (storeIds != null && storeIds.isEmpty()) {
+            log.warn("Manager {} has no assigned stores, returning empty statistics", manager.getUsername());
+            stats.setTotalRevenue(BigDecimal.ZERO);
+            stats.setDailyRevenues(new ArrayList<>());
+            stats.setMonthlyRevenues(new ArrayList<>());
+            stats.setTopSellingDrinks(new ArrayList<>());
+            return stats;
+        }
+        
         try {
-            // Calculate total revenue from DONE orders + backup
-            String totalRevenueQuery = "SELECT COALESCE(SUM(o.finalPrice), 0) FROM Order o WHERE o.status = :status";
-            BigDecimal totalRevenue = entityManager.createQuery(totalRevenueQuery, BigDecimal.class)
-                .setParameter("status", OrderStatus.DONE)
-                .getSingleResult();
-            
-            // Thêm doanh thu từ backup
-            BigDecimal backupRevenue = getBackupTotalRevenue();
-            totalRevenue = totalRevenue.add(backupRevenue);
+            // ==================== TOTAL REVENUE ====================
+            BigDecimal totalRevenue;
+            if (storeIds == null) {
+                // ADMIN - xem tất cả + backup
+                String totalRevenueQuery = "SELECT COALESCE(SUM(o.finalPrice), 0) FROM Order o WHERE o.status = :status";
+                totalRevenue = entityManager.createQuery(totalRevenueQuery, BigDecimal.class)
+                    .setParameter("status", OrderStatus.DONE)
+                    .getSingleResult();
+                
+                // ADMIN mới cộng backup revenue (dữ liệu lịch sử của user đã xóa)
+                BigDecimal backupRevenue = getBackupTotalRevenue();
+                totalRevenue = totalRevenue.add(backupRevenue);
+            } else {
+                // Manager - chỉ xem stores được gán (KHÔNG cộng backup)
+                String totalRevenueQuery = "SELECT COALESCE(SUM(o.finalPrice), 0) FROM Order o WHERE o.status = :status AND o.store.id IN :storeIds";
+                totalRevenue = entityManager.createQuery(totalRevenueQuery, BigDecimal.class)
+                    .setParameter("status", OrderStatus.DONE)
+                    .setParameter("storeIds", storeIds)
+                    .getSingleResult();
+                // Manager không cộng backup - chỉ xem doanh thu hiện tại
+            }
             stats.setTotalRevenue(totalRevenue != null ? totalRevenue : BigDecimal.ZERO);
             
-            // Get daily revenues using native query for better compatibility
+            // ==================== DAILY REVENUE ====================
             if (days != null && days > 0) {
                 java.time.Instant cutoffDate = java.time.Instant.now().minus(days, java.time.temporal.ChronoUnit.DAYS);
                 
-                // Use native query for date grouping - works with MySQL/PostgreSQL/H2
-                String dailyNativeQuery = """
-                    SELECT CAST(o.created_at AS DATE) as order_date, 
-                           COALESCE(SUM(o.final_price), 0) as revenue,
-                           COUNT(o.id) as order_count
-                    FROM orders o 
-                    WHERE o.status = 'DONE' 
-                      AND o.created_at >= :cutoffDate
-                    GROUP BY CAST(o.created_at AS DATE)
-                    ORDER BY order_date ASC
-                    """;
+                String dailyNativeQuery;
+                if (storeIds == null) {
+                    dailyNativeQuery = """
+                        SELECT CAST(o.created_at AS DATE) as order_date, 
+                               COALESCE(SUM(o.final_price), 0) as revenue,
+                               COUNT(o.id) as order_count
+                        FROM orders o 
+                        WHERE o.status = 'DONE' 
+                          AND o.created_at >= :cutoffDate
+                        GROUP BY CAST(o.created_at AS DATE)
+                        ORDER BY order_date ASC
+                        """;
+                } else {
+                    dailyNativeQuery = """
+                        SELECT CAST(o.created_at AS DATE) as order_date, 
+                               COALESCE(SUM(o.final_price), 0) as revenue,
+                               COUNT(o.id) as order_count
+                        FROM orders o 
+                        WHERE o.status = 'DONE' 
+                          AND o.created_at >= :cutoffDate
+                          AND o.store_id IN (:storeIds)
+                        GROUP BY CAST(o.created_at AS DATE)
+                        ORDER BY order_date ASC
+                        """;
+                }
                 
                 @SuppressWarnings("unchecked")
-                List<Object[]> dailyResults = entityManager.createNativeQuery(dailyNativeQuery)
-                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
-                    .getResultList();
+                var query = entityManager.createNativeQuery(dailyNativeQuery)
+                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate));
+                if (storeIds != null) {
+                    query.setParameter("storeIds", storeIds);
+                }
+                List<Object[]> dailyResults = query.getResultList();
                 
-                // Lấy thêm daily revenue từ backup
-                String dailyBackupQuery = """
-                    SELECT CAST(b.order_created_at AS DATE) as order_date, 
-                           COALESCE(SUM(b.final_price), 0) as revenue,
-                           COUNT(b.id) as order_count
-                    FROM deleted_user_order_backup b 
-                    WHERE b.order_status = 'DONE' 
-                      AND b.order_created_at >= :cutoffDate
-                    GROUP BY CAST(b.order_created_at AS DATE)
-                    """;
-                
-                @SuppressWarnings("unchecked")
-                List<Object[]> dailyBackupResults = entityManager.createNativeQuery(dailyBackupQuery)
-                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
-                    .getResultList();
-                
-                // Merge daily results
                 java.util.Map<java.time.LocalDate, com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue> dailyMap = new java.util.HashMap<>();
                 
                 for (Object[] row : dailyResults) {
@@ -670,19 +711,9 @@ public class ManagerService {
                     dailyMap.put(date, new com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue(date, revenue, orderCount));
                 }
                 
-                // Merge backup data
-                for (Object[] row : dailyBackupResults) {
-                    java.time.LocalDate date = parseDateFromRow(row[0]);
-                    BigDecimal revenue = row[1] instanceof BigDecimal ? (BigDecimal) row[1] : new BigDecimal(row[1].toString());
-                    Long orderCount = ((Number) row[2]).longValue();
-                    
-                    if (dailyMap.containsKey(date)) {
-                        com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue existing = dailyMap.get(date);
-                        existing.setRevenue(existing.getRevenue().add(revenue));
-                        existing.setOrderCount(existing.getOrderCount() + orderCount);
-                    } else {
-                        dailyMap.put(date, new com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue(date, revenue, orderCount));
-                    }
+                // ADMIN cộng thêm backup daily revenue
+                if (isAdmin) {
+                    mergeDailyBackupRevenue(dailyMap, cutoffDate);
                 }
                 
                 List<com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue> dailyRevenues = new ArrayList<>(dailyMap.values());
@@ -690,47 +721,47 @@ public class ManagerService {
                 stats.setDailyRevenues(dailyRevenues);
             }
             
-            // Get monthly revenues using native query
+            // ==================== MONTHLY REVENUE ====================
             if (months != null && months > 0) {
                 java.time.Instant cutoffDate = java.time.Instant.now().minus(months * 30L, java.time.temporal.ChronoUnit.DAYS);
                 
-                String monthlyNativeQuery = """
-                    SELECT YEAR(o.created_at) as year_val,
-                           MONTH(o.created_at) as month_val,
-                           COALESCE(SUM(o.final_price), 0) as revenue,
-                           COUNT(o.id) as order_count
-                    FROM orders o 
-                    WHERE o.status = 'DONE'
-                      AND o.created_at >= :cutoffDate
-                    GROUP BY YEAR(o.created_at), MONTH(o.created_at)
-                    ORDER BY year_val ASC, month_val ASC
-                    """;
+                String monthlyNativeQuery;
+                if (storeIds == null) {
+                    monthlyNativeQuery = """
+                        SELECT YEAR(o.created_at) as year_val,
+                               MONTH(o.created_at) as month_val,
+                               COALESCE(SUM(o.final_price), 0) as revenue,
+                               COUNT(o.id) as order_count
+                        FROM orders o 
+                        WHERE o.status = 'DONE'
+                          AND o.created_at >= :cutoffDate
+                        GROUP BY YEAR(o.created_at), MONTH(o.created_at)
+                        ORDER BY year_val ASC, month_val ASC
+                        """;
+                } else {
+                    monthlyNativeQuery = """
+                        SELECT YEAR(o.created_at) as year_val,
+                               MONTH(o.created_at) as month_val,
+                               COALESCE(SUM(o.final_price), 0) as revenue,
+                               COUNT(o.id) as order_count
+                        FROM orders o 
+                        WHERE o.status = 'DONE'
+                          AND o.created_at >= :cutoffDate
+                          AND o.store_id IN (:storeIds)
+                        GROUP BY YEAR(o.created_at), MONTH(o.created_at)
+                        ORDER BY year_val ASC, month_val ASC
+                        """;
+                }
                 
                 @SuppressWarnings("unchecked")
-                List<Object[]> monthlyResults = entityManager.createNativeQuery(monthlyNativeQuery)
-                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
-                    .getResultList();
+                var query = entityManager.createNativeQuery(monthlyNativeQuery)
+                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate));
+                if (storeIds != null) {
+                    query.setParameter("storeIds", storeIds);
+                }
+                List<Object[]> monthlyResults = query.getResultList();
                 
-                // Lấy thêm monthly revenue từ backup
-                String monthlyBackupQuery = """
-                    SELECT YEAR(b.order_created_at) as year_val,
-                           MONTH(b.order_created_at) as month_val,
-                           COALESCE(SUM(b.final_price), 0) as revenue,
-                           COUNT(b.id) as order_count
-                    FROM deleted_user_order_backup b 
-                    WHERE b.order_status = 'DONE'
-                      AND b.order_created_at >= :cutoffDate
-                    GROUP BY YEAR(b.order_created_at), MONTH(b.order_created_at)
-                    """;
-                
-                @SuppressWarnings("unchecked")
-                List<Object[]> monthlyBackupResults = entityManager.createNativeQuery(monthlyBackupQuery)
-                    .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
-                    .getResultList();
-                
-                // Merge monthly results
                 java.util.Map<String, com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue> monthlyMap = new java.util.HashMap<>();
-                
                 for (Object[] row : monthlyResults) {
                     Integer year = ((Number) row[0]).intValue();
                     Integer month = ((Number) row[1]).intValue();
@@ -740,21 +771,9 @@ public class ManagerService {
                     monthlyMap.put(key, new com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue(year, month, revenue, orderCount));
                 }
                 
-                // Merge backup data
-                for (Object[] row : monthlyBackupResults) {
-                    Integer year = ((Number) row[0]).intValue();
-                    Integer month = ((Number) row[1]).intValue();
-                    BigDecimal revenue = row[2] instanceof BigDecimal ? (BigDecimal) row[2] : new BigDecimal(row[2].toString());
-                    Long orderCount = ((Number) row[3]).longValue();
-                    String key = year + "-" + month;
-                    
-                    if (monthlyMap.containsKey(key)) {
-                        com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue existing = monthlyMap.get(key);
-                        existing.setRevenue(existing.getRevenue().add(revenue));
-                        existing.setOrderCount(existing.getOrderCount() + orderCount);
-                    } else {
-                        monthlyMap.put(key, new com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue(year, month, revenue, orderCount));
-                    }
+                // ADMIN cộng thêm backup monthly revenue
+                if (isAdmin) {
+                    mergeMonthlyBackupRevenue(monthlyMap, cutoffDate);
                 }
                 
                 List<com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue> monthlyRevenues = new ArrayList<>(monthlyMap.values());
@@ -765,25 +784,44 @@ public class ManagerService {
                 stats.setMonthlyRevenues(monthlyRevenues);
             }
             
-            // Get top selling drinks
-            String topDrinksQuery = """
-                SELECT oi.drink.id,
-                       oi.drinkNameSnapshot,
-                       oi.drink.imageUrl,
-                       SUM(oi.quantity) as totalQuantity,
-                       SUM(oi.itemPrice) as totalRevenue
-                FROM OrderItem oi
-                JOIN oi.order o
-                WHERE o.status = :status
-                GROUP BY oi.drink.id, oi.drinkNameSnapshot, oi.drink.imageUrl
-                ORDER BY SUM(oi.quantity) DESC
-                """;
+            // ==================== TOP SELLING DRINKS ====================
+            String topDrinksQuery;
+            if (storeIds == null) {
+                topDrinksQuery = """
+                    SELECT oi.drink.id,
+                           oi.drinkNameSnapshot,
+                           oi.drink.imageUrl,
+                           SUM(oi.quantity) as totalQuantity,
+                           SUM(oi.itemPrice) as totalRevenue
+                    FROM OrderItem oi
+                    JOIN oi.order o
+                    WHERE o.status = :status
+                    GROUP BY oi.drink.id, oi.drinkNameSnapshot, oi.drink.imageUrl
+                    ORDER BY SUM(oi.quantity) DESC
+                    """;
+            } else {
+                topDrinksQuery = """
+                    SELECT oi.drink.id,
+                           oi.drinkNameSnapshot,
+                           oi.drink.imageUrl,
+                           SUM(oi.quantity) as totalQuantity,
+                           SUM(oi.itemPrice) as totalRevenue
+                    FROM OrderItem oi
+                    JOIN oi.order o
+                    WHERE o.status = :status AND o.store.id IN :storeIds
+                    GROUP BY oi.drink.id, oi.drinkNameSnapshot, oi.drink.imageUrl
+                    ORDER BY SUM(oi.quantity) DESC
+                    """;
+            }
             
             @SuppressWarnings("unchecked")
-            List<Object[]> topDrinksResults = entityManager.createQuery(topDrinksQuery)
+            var topDrinksQueryObj = entityManager.createQuery(topDrinksQuery)
                 .setParameter("status", OrderStatus.DONE)
-                .setMaxResults(10)
-                .getResultList();
+                .setMaxResults(10);
+            if (storeIds != null) {
+                topDrinksQueryObj.setParameter("storeIds", storeIds);
+            }
+            List<Object[]> topDrinksResults = topDrinksQueryObj.getResultList();
             
             List<com.utetea.backend.dto.RevenueStatisticsDto.TopSellingDrink> topDrinks = new ArrayList<>();
             for (Object[] row : topDrinksResults) {
@@ -797,14 +835,13 @@ public class ManagerService {
             }
             stats.setTopSellingDrinks(topDrinks);
             
-            log.info("Revenue statistics calculated - total: {} (including backup), daily entries: {}, monthly entries: {}, top drinks: {}",
+            log.info("Revenue statistics calculated - total: {}, daily: {}, monthly: {}, top drinks: {}",
                 totalRevenue, stats.getDailyRevenues() != null ? stats.getDailyRevenues().size() : 0,
                 stats.getMonthlyRevenues() != null ? stats.getMonthlyRevenues().size() : 0,
                 topDrinks.size());
             
         } catch (Exception e) {
             log.error("Error calculating revenue statistics", e);
-            // Return empty stats instead of throwing
             stats.setTotalRevenue(BigDecimal.ZERO);
             stats.setDailyRevenues(new ArrayList<>());
             stats.setMonthlyRevenues(new ArrayList<>());
@@ -812,6 +849,89 @@ public class ManagerService {
         }
         
         return stats;
+    }
+    
+    /**
+     * Merge backup daily revenue vào map (chỉ cho ADMIN)
+     */
+    private void mergeDailyBackupRevenue(
+            java.util.Map<java.time.LocalDate, com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue> dailyMap,
+            java.time.Instant cutoffDate) {
+        try {
+            String backupQuery = """
+                SELECT CAST(b.order_created_at AS DATE) as order_date, 
+                       COALESCE(SUM(b.final_price), 0) as revenue,
+                       COUNT(b.id) as order_count
+                FROM deleted_user_order_backup b 
+                WHERE b.order_status = 'DONE' 
+                  AND b.order_created_at >= :cutoffDate
+                GROUP BY CAST(b.order_created_at AS DATE)
+                """;
+            
+            @SuppressWarnings("unchecked")
+            List<Object[]> backupResults = entityManager.createNativeQuery(backupQuery)
+                .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
+                .getResultList();
+            
+            for (Object[] row : backupResults) {
+                java.time.LocalDate date = parseDateFromRow(row[0]);
+                BigDecimal revenue = row[1] instanceof BigDecimal ? (BigDecimal) row[1] : new BigDecimal(row[1].toString());
+                Long orderCount = ((Number) row[2]).longValue();
+                
+                if (dailyMap.containsKey(date)) {
+                    var existing = dailyMap.get(date);
+                    existing.setRevenue(existing.getRevenue().add(revenue));
+                    existing.setOrderCount(existing.getOrderCount() + orderCount);
+                } else {
+                    dailyMap.put(date, new com.utetea.backend.dto.RevenueStatisticsDto.DailyRevenue(date, revenue, orderCount));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error merging daily backup revenue: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Merge backup monthly revenue vào map (chỉ cho ADMIN)
+     */
+    private void mergeMonthlyBackupRevenue(
+            java.util.Map<String, com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue> monthlyMap,
+            java.time.Instant cutoffDate) {
+        try {
+            String backupQuery = """
+                SELECT YEAR(b.order_created_at) as year_val,
+                       MONTH(b.order_created_at) as month_val,
+                       COALESCE(SUM(b.final_price), 0) as revenue,
+                       COUNT(b.id) as order_count
+                FROM deleted_user_order_backup b 
+                WHERE b.order_status = 'DONE'
+                  AND b.order_created_at >= :cutoffDate
+                GROUP BY YEAR(b.order_created_at), MONTH(b.order_created_at)
+                """;
+            
+            @SuppressWarnings("unchecked")
+            List<Object[]> backupResults = entityManager.createNativeQuery(backupQuery)
+                .setParameter("cutoffDate", java.sql.Timestamp.from(cutoffDate))
+                .getResultList();
+            
+            for (Object[] row : backupResults) {
+                Integer year = ((Number) row[0]).intValue();
+                Integer month = ((Number) row[1]).intValue();
+                BigDecimal revenue = row[2] instanceof BigDecimal ? (BigDecimal) row[2] : new BigDecimal(row[2].toString());
+                Long orderCount = ((Number) row[3]).longValue();
+                String key = year + "-" + month;
+                
+                if (monthlyMap.containsKey(key)) {
+                    var existing = monthlyMap.get(key);
+                    existing.setRevenue(existing.getRevenue().add(revenue));
+                    existing.setOrderCount(existing.getOrderCount() + orderCount);
+                } else {
+                    monthlyMap.put(key, new com.utetea.backend.dto.RevenueStatisticsDto.MonthlyRevenue(year, month, revenue, orderCount));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error merging monthly backup revenue: {}", e.getMessage());
+        }
     }
     
     /**

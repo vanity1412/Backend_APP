@@ -17,6 +17,8 @@ public class LiveChatDto {
         private String userAvatar;
         private Long managerId;
         private String managerName;
+        private Long storeId;
+        private String storeName;
         private ConversationStatus status;
         private String subject;
         private String lastMessage;
@@ -50,6 +52,7 @@ public class LiveChatDto {
     public static class StartConversationRequest {
         private String subject;
         private String initialMessage;
+        private Long storeId; // Chi nhánh user chọn để tư vấn
     }
 
     @Data @NoArgsConstructor @AllArgsConstructor @Builder
@@ -58,6 +61,8 @@ public class LiveChatDto {
         private Long userId;
         private String userName;
         private String userAvatar;
+        private Long storeId;
+        private String storeName;
         private ConversationStatus status;
         private String subject;
         private String lastMessage;

@@ -69,16 +69,22 @@ public class User extends AuditEntity {
     private Set<Store> managedStores = new HashSet<>();
     
     /**
-     * Kiểm tra xem Manager có quyền quản lý store này không
+     * Kiểm tra xem user có quyền quản lý store này không
+     * ADMIN có quyền quản lý tất cả
+     * Manager PHẢI có store được gán mới có quyền
      */
     public boolean canManageStore(Long storeId) {
+        // ADMIN có quyền quản lý tất cả stores
+        if (this.role == UserRole.ADMIN) {
+            return true;
+        }
         // Nếu không phải Manager thì không có quyền
         if (this.role != UserRole.MANAGER) {
             return false;
         }
-        // Nếu managedStores rỗng = Super Manager, quản lý tất cả
+        // Manager PHẢI có stores được gán
         if (this.managedStores == null || this.managedStores.isEmpty()) {
-            return true;
+            return false; // Không có store nào được gán -> không có quyền
         }
         // Kiểm tra store có trong danh sách được gán không
         return this.managedStores.stream()
@@ -86,10 +92,21 @@ public class User extends AuditEntity {
     }
     
     /**
-     * Kiểm tra xem có phải Super Manager (quản lý tất cả) không
+     * Kiểm tra xem Manager có được gán store nào không
+     * @deprecated Không còn khái niệm Super Manager nữa
      */
+    @Deprecated
     public boolean isSuperManager() {
+        // Không còn Super Manager - Manager phải có store được gán
+        return false;
+    }
+    
+    /**
+     * Kiểm tra xem Manager có được gán store nào không
+     */
+    public boolean hasAssignedStores() {
         return this.role == UserRole.MANAGER && 
-               (this.managedStores == null || this.managedStores.isEmpty());
+               this.managedStores != null && 
+               !this.managedStores.isEmpty();
     }
 }

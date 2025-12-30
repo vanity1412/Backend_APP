@@ -21,6 +21,14 @@ public class ChatConversation extends AuditEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "manager_id")
     private User manager;
+    
+    /**
+     * Chi nhánh mà user chọn để tư vấn
+     * Manager chỉ thấy conversation của chi nhánh mình quản lý
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id")
+    private Store store;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

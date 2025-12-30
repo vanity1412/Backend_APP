@@ -359,7 +359,9 @@ public class OrderService {
             String content = "Khách hàng " + order.getUser().getFullName() +
                     " vừa đặt đơn trị giá " + order.getFinalPrice() + "đ.";
 
-            oneSignalService.sendToMultipleUsers(managerIds, title, content);
+            // Gửi push notification và lưu vào database
+            oneSignalService.sendToMultipleUsers(managerIds, title, content, 
+                    NotificationType.ORDER_NEW, order.getId());
             log.info("Sent push notification to {} managers", managerIds.length);
 
         } catch (Exception e) {
@@ -397,7 +399,9 @@ public class OrderService {
                     return;
             }
 
-            oneSignalService.sendToUser(userId, title, content);
+            // Gửi push notification và lưu vào database
+            oneSignalService.sendToUser(userId, title, content, 
+                    NotificationType.ORDER_STATUS, order.getId());
             log.info("Sent push notification to user {}", userId);
 
         } catch (Exception e) {

@@ -11,8 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,6 +23,7 @@ public class LiveChatService {
     private final ChatConversationRepository conversationRepository;
     private final LiveChatMessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final StoreRepository storeRepository;
     private final LiveChatWebSocketService webSocketService;
 
     /**
@@ -33,9 +34,16 @@ public class LiveChatService {
         User user = userRepository.findByUsername(username)
             .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
 
-        // Kiểm tra xem user đã có conversation đang active chưa
-        // Nếu có, trả về conversation đó thay vì tạo mới
-        var existingConversation = conversationRepository.findActiveByUserId(user.getId());
+        // Validate storeId - bắt buộc phải chọn chi nhánh
+        if (request.getStoreId() == null) {
+            throw new BusinessException("Vui lòng chọn chi nhánh để được tư vấn");
+        }
+        
+        Store store = storeRepository.findById(request.getStoreId())
+            .orElseThrow(() -> new ResourceNotFoundException("Store", "id", request.getStoreId()));
+
+        // Kiểm tra xem user đã có conversation đang active với store này chưa
+        var existingConversation = conversationRepository.findActiveByUserIdAndStoreId(user.getId(), store.getId());
         if (existingConversation.isPresent()) {
             ChatConversation conversation = existingConversation.get();
             
@@ -57,13 +65,14 @@ public class LiveChatService {
                 webSocketService.notifyNewMessage(conversation.getId(), msgDto);
             }
             
-            log.info("User {} continuing existing conversation #{}", username, conversation.getId());
+            log.info("User {} continuing existing conversation #{} at store {}", username, conversation.getId(), store.getStoreName());
             return mapToDto(conversationRepository.findByIdWithMessages(conversation.getId()).orElse(conversation));
         }
 
         // Tạo conversation mới
         ChatConversation conversation = new ChatConversation();
         conversation.setUser(user);
+        conversation.setStore(store);
         conversation.setStatus(ConversationStatus.WAITING);
         conversation.setSubject(request.getSubject());
         conversation.setUnreadManager(1);
@@ -83,9 +92,9 @@ public class LiveChatService {
             conversationRepository.save(conversation);
         }
 
-        log.info("User {} started new conversation #{}", username, conversation.getId());
+        log.info("User {} started new conversation #{} at store {}", username, conversation.getId(), store.getStoreName());
 
-        // Notify managers về conversation mới
+        // Notify managers về conversation mới (chỉ managers quản lý store này)
         ConversationDto dto = mapToDto(conversation);
         webSocketService.notifyNewConversation(dto);
 
@@ -111,9 +120,17 @@ public class LiveChatService {
 
         // Validate quyền gửi tin nhắn
         boolean isUser = conversation.getUser().getId().equals(sender.getId());
+        boolean isAdmin = sender.getRole() == UserRole.ADMIN;
         boolean isManager = sender.getRole() == UserRole.MANAGER;
+        
+        // Manager phải quản lý store của conversation này
+        if (isManager && !isAdmin) {
+            if (!canManagerAccessConversation(sender, conversation)) {
+                throw new BusinessException("Bạn không có quyền tư vấn cho chi nhánh này");
+            }
+        }
 
-        if (!isUser && !isManager) {
+        if (!isUser && !isManager && !isAdmin) {
             throw new BusinessException("Bạn không có quyền gửi tin nhắn trong cuộc hội thoại này");
         }
 
@@ -122,7 +139,7 @@ public class LiveChatService {
         message.setConversation(conversation);
         message.setSender(sender);
         message.setContent(request.getContent());
-        message.setSenderType(isManager ? SenderType.MANAGER : SenderType.USER);
+        message.setSenderType((isManager || isAdmin) ? SenderType.MANAGER : SenderType.USER);
         message = messageRepository.save(message);
 
         // Cập nhật conversation
@@ -164,14 +181,35 @@ public class LiveChatService {
 
     /**
      * Lấy danh sách conversation cho manager
+     * Manager chỉ thấy conversation của stores mình quản lý
+     * ADMIN thấy tất cả
      */
     @Transactional(readOnly = true)
     public List<ConversationListDto> getManagerConversations(String username) {
-        User manager = userRepository.findByUsername(username)
+        User manager = userRepository.findByUsernameWithManagedStores(username)
             .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
 
-        return conversationRepository.findForManager(manager.getId())
-            .stream()
+        List<ChatConversation> conversations;
+        
+        if (manager.getRole() == UserRole.ADMIN) {
+            // ADMIN thấy tất cả
+            conversations = conversationRepository.findForManager(manager.getId());
+        } else {
+            // Manager chỉ thấy conversations của stores được gán
+            Set<Store> managedStores = manager.getManagedStores();
+            if (managedStores == null || managedStores.isEmpty()) {
+                log.warn("Manager {} has no assigned stores, returning empty conversations", username);
+                return List.of();
+            }
+            
+            List<Long> storeIds = managedStores.stream()
+                .map(Store::getId)
+                .collect(Collectors.toList());
+            
+            conversations = conversationRepository.findByStoreIdIn(storeIds);
+        }
+        
+        return conversations.stream()
             .map(c -> {
                 ConversationListDto dto = mapToListDto(c);
                 dto.setUnreadCount(c.getUnreadManager());
@@ -185,7 +223,7 @@ public class LiveChatService {
      */
     @Transactional
     public ConversationDto getConversation(String username, Long conversationId) {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameWithManagedStores(username)
             .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
 
         ChatConversation conversation = conversationRepository.findByIdWithMessages(conversationId)
@@ -193,9 +231,17 @@ public class LiveChatService {
 
         // Validate quyền xem
         boolean isUser = conversation.getUser().getId().equals(user.getId());
+        boolean isAdmin = user.getRole() == UserRole.ADMIN;
         boolean isManager = user.getRole() == UserRole.MANAGER;
+        
+        // Manager phải quản lý store của conversation này
+        if (isManager && !isAdmin && !isUser) {
+            if (!canManagerAccessConversation(user, conversation)) {
+                throw new BusinessException("Bạn không có quyền xem cuộc hội thoại của chi nhánh này");
+            }
+        }
 
-        if (!isUser && !isManager) {
+        if (!isUser && !isManager && !isAdmin) {
             throw new BusinessException("Bạn không có quyền xem cuộc hội thoại này");
         }
 
@@ -212,21 +258,30 @@ public class LiveChatService {
         return mapToDto(conversation);
     }
 
+
     /**
      * Đóng conversation
      */
     @Transactional
     public ConversationDto closeConversation(String username, Long conversationId) {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameWithManagedStores(username)
             .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
 
         ChatConversation conversation = conversationRepository.findById(conversationId)
             .orElseThrow(() -> new ResourceNotFoundException("Conversation", "id", conversationId));
 
         boolean isUser = conversation.getUser().getId().equals(user.getId());
+        boolean isAdmin = user.getRole() == UserRole.ADMIN;
         boolean isManager = user.getRole() == UserRole.MANAGER;
+        
+        // Manager phải quản lý store của conversation này
+        if (isManager && !isAdmin && !isUser) {
+            if (!canManagerAccessConversation(user, conversation)) {
+                throw new BusinessException("Bạn không có quyền đóng cuộc hội thoại của chi nhánh này");
+            }
+        }
 
-        if (!isUser && !isManager) {
+        if (!isUser && !isManager && !isAdmin) {
             throw new BusinessException("Bạn không có quyền đóng cuộc hội thoại này");
         }
 
@@ -237,7 +292,7 @@ public class LiveChatService {
         LiveChatMessage systemMsg = new LiveChatMessage();
         systemMsg.setConversation(conversation);
         systemMsg.setSender(user);
-        systemMsg.setContent("Cuộc hội thoại đã được đóng bởi " + (isManager ? "nhân viên" : "khách hàng"));
+        systemMsg.setContent("Cuộc hội thoại đã được đóng bởi " + ((isManager || isAdmin) ? "nhân viên" : "khách hàng"));
         systemMsg.setSenderType(SenderType.SYSTEM);
         messageRepository.save(systemMsg);
 
@@ -250,10 +305,51 @@ public class LiveChatService {
     }
 
     /**
-     * Đếm số conversation đang chờ
+     * Đếm số conversation đang chờ (cho Manager theo stores được gán)
      */
-    public Long countWaitingConversations() {
-        return conversationRepository.countWaitingConversations();
+    @Transactional(readOnly = true)
+    public Long countWaitingConversations(String username) {
+        User manager = userRepository.findByUsernameWithManagedStores(username)
+            .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
+        
+        if (manager.getRole() == UserRole.ADMIN) {
+            return conversationRepository.countWaitingConversations();
+        }
+        
+        Set<Store> managedStores = manager.getManagedStores();
+        if (managedStores == null || managedStores.isEmpty()) {
+            return 0L;
+        }
+        
+        List<Long> storeIds = managedStores.stream()
+            .map(Store::getId)
+            .collect(Collectors.toList());
+        
+        return conversationRepository.countWaitingByStoreIds(storeIds);
+    }
+    
+    /**
+     * Kiểm tra Manager có quyền truy cập conversation không
+     */
+    private boolean canManagerAccessConversation(User manager, ChatConversation conversation) {
+        // ADMIN có quyền truy cập tất cả
+        if (manager.getRole() == UserRole.ADMIN) {
+            return true;
+        }
+        
+        // Conversation không có store -> cho phép (backward compatible)
+        if (conversation.getStore() == null) {
+            return true;
+        }
+        
+        // Manager phải quản lý store của conversation
+        Set<Store> managedStores = manager.getManagedStores();
+        if (managedStores == null || managedStores.isEmpty()) {
+            return false;
+        }
+        
+        return managedStores.stream()
+            .anyMatch(s -> s.getId().equals(conversation.getStore().getId()));
     }
 
     // ==================== MAPPING ====================
@@ -266,6 +362,8 @@ public class LiveChatService {
             .userAvatar(c.getUser().getAvatarUrl())
             .managerId(c.getManager() != null ? c.getManager().getId() : null)
             .managerName(c.getManager() != null ? c.getManager().getFullName() : null)
+            .storeId(c.getStore() != null ? c.getStore().getId() : null)
+            .storeName(c.getStore() != null ? c.getStore().getStoreName() : null)
             .status(c.getStatus())
             .subject(c.getSubject())
             .lastMessage(c.getLastMessage())
@@ -283,6 +381,8 @@ public class LiveChatService {
             .userId(c.getUser().getId())
             .userName(c.getUser().getFullName())
             .userAvatar(c.getUser().getAvatarUrl())
+            .storeId(c.getStore() != null ? c.getStore().getId() : null)
+            .storeName(c.getStore() != null ? c.getStore().getStoreName() : null)
             .status(c.getStatus())
             .subject(c.getSubject())
             .lastMessage(c.getLastMessage())
