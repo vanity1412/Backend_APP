@@ -7,6 +7,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -53,8 +55,15 @@ public class HttpSmsService {
             otpExpiry.put(recipientPhone, System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5));
 
             // 4. Chuẩn bị dữ liệu gửi (JSON)
+            // Lấy thời gian hiện tại: VD "31/12 10:30:45"
+            String timeStamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM HH:mm:ss"));
+
+            // Nội dung tin nhắn sẽ luôn khác nhau nhờ giây thay đổi liên tục
+            String messageContent = "Ma OTP Houjicha: " + otpCode + ". Date: " + timeStamp;
+
+            // Chuẩn bị payload
             Map<String, Object> payload = new HashMap<>();
-            payload.put("content", "Ma xac thuc tra sua Houjicha cua ban la: " + otpCode);
+            payload.put("content", messageContent);
             payload.put("from", senderPhoneNumber);
             payload.put("to", recipientPhone);
 
