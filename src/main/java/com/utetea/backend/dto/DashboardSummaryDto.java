@@ -14,10 +14,21 @@ public class DashboardSummaryDto {
     private Long canceledOrders;
     private List<TopSellingDrinkDto> topSellingDrinks;
     
+    // Thông tin về stores được quản lý (cho Manager)
+    private List<ManagedStoreInfo> managedStores;
+    private Boolean isAdmin;
+    
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor
     public static class TopSellingDrinkDto {
         private String drinkName;
         private Long totalSold;
         private BigDecimal revenue;
+    }
+    
+    @Getter @Setter @NoArgsConstructor @AllArgsConstructor
+    public static class ManagedStoreInfo {
+        private Long id;
+        private String storeName;
+        private String address;
     }
 }

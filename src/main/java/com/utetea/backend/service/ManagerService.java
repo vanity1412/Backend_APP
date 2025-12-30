@@ -227,6 +227,18 @@ public class ManagerService {
             summary.setCompletedOrders(completedOrders != null ? completedOrders : 0L);
             summary.setCanceledOrders(canceledOrders != null ? canceledOrders : 0L);
             summary.setTopSellingDrinks(topSellingDrinks);
+            summary.setIsAdmin(isAdmin);
+            
+            // Thêm thông tin stores được quản lý (cho Manager)
+            if (!isAdmin && manager.getManagedStores() != null) {
+                List<DashboardSummaryDto.ManagedStoreInfo> managedStoreInfos = manager.getManagedStores().stream()
+                    .map(store -> new DashboardSummaryDto.ManagedStoreInfo(
+                        store.getId(), 
+                        store.getStoreName(), 
+                        store.getAddress()))
+                    .collect(Collectors.toList());
+                summary.setManagedStores(managedStoreInfos);
+            }
             
             log.info("Dashboard summary: revenue={}, total={}, pending={}, completed={}", 
                 totalRevenue, totalOrders, pendingOrders, completedOrders);
@@ -346,10 +358,21 @@ public class ManagerService {
     
     @Transactional
     public UserDto toggleUserBlock(Long userId, boolean blocked) {
-        log.info("Toggling user {} block status to: {}", userId, blocked);
+        User currentUser = getCurrentManager();
+        log.info("{} toggling user {} block status to: {}", currentUser.getRole(), userId, blocked);
         
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+        
+        // Không cho phép khóa ADMIN
+        if (user.getRole() == UserRole.ADMIN) {
+            throw new BusinessException("Không thể khóa tài khoản Admin");
+        }
+        
+        // Manager chỉ được khóa USER, không được khóa Manager khác
+        if (currentUser.getRole() == UserRole.MANAGER && user.getRole() == UserRole.MANAGER) {
+            throw new BusinessException("Manager không có quyền khóa tài khoản Manager khác");
+        }
         
         user.setIsBlocked(blocked);
         user.setActive(!blocked); // If blocked, set active to false
