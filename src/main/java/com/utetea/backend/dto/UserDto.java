@@ -8,6 +8,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Data
 @NoArgsConstructor
@@ -27,6 +29,10 @@ public class UserDto {
     private Instant createdAt;
     private Instant updatedAt;
     
+    // Thông tin về stores được quản lý (chỉ cho Manager)
+    private List<ManagedStoreInfo> managedStores;
+    private Boolean isSuperManager;
+    
     // Constructor from User entity
     public UserDto(User user) {
         this.id = user.getId();
@@ -42,5 +48,21 @@ public class UserDto {
         this.isBlocked = user.getIsBlocked();
         this.createdAt = user.getCreatedAt();
         this.updatedAt = user.getUpdatedAt();
+        
+        // Thêm thông tin managed stores nếu là Manager
+        if (user.getRole() == UserRole.MANAGER && user.getManagedStores() != null) {
+            this.managedStores = user.getManagedStores().stream()
+                .map(store -> new ManagedStoreInfo(store.getId(), store.getStoreName()))
+                .collect(Collectors.toList());
+            this.isSuperManager = user.getManagedStores().isEmpty();
+        }
+    }
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ManagedStoreInfo {
+        private Long id;
+        private String storeName;
     }
 }

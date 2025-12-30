@@ -49,7 +49,7 @@ public class ManagerController {
     
     @GetMapping("/summary")
     @Operation(summary = "Dashboard Summary", description = "Lấy tổng quan doanh thu, đơn hàng")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<DashboardSummaryDto>> getDashboardSummary() {
         log.info("========== GET /api/manager/summary ==========");
         var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -62,7 +62,7 @@ public class ManagerController {
     
     @GetMapping("/orders")
     @Operation(summary = "Get Orders", description = "Lấy danh sách đơn hàng theo status")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Page<OrderDto>>> getOrders(
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
@@ -88,7 +88,7 @@ public class ManagerController {
     
     @PutMapping("/orders/{orderId}/status")
     @Operation(summary = "Update Order Status", description = "Cập nhật trạng thái đơn hàng")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<OrderDto>> updateOrderStatus(
             @PathVariable Long orderId,
             @RequestParam String status) {
@@ -111,7 +111,7 @@ public class ManagerController {
     
     @GetMapping("/users")
     @Operation(summary = "Get All Users", description = "Lấy danh sách tất cả người dùng")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.UserDto>>> getAllUsers(
             @RequestParam(required = false) String role,
             @RequestParam(defaultValue = "0") int page,
@@ -127,7 +127,7 @@ public class ManagerController {
     
     @GetMapping("/users/{userId}")
     @Operation(summary = "Get User Detail", description = "Lấy thông tin chi tiết người dùng")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<com.utetea.backend.dto.UserDto>> getUserById(
             @PathVariable Long userId) {
         
@@ -139,7 +139,7 @@ public class ManagerController {
     
     @PutMapping("/users/{userId}/block")
     @Operation(summary = "Block/Unblock User", description = "Khóa hoặc mở khóa tài khoản người dùng")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<com.utetea.backend.dto.UserDto>> toggleUserBlock(
             @PathVariable Long userId,
             @RequestParam boolean blocked) {
@@ -153,7 +153,7 @@ public class ManagerController {
     
     @GetMapping("/users/search")
     @Operation(summary = "Search Users", description = "Tìm kiếm người dùng theo từ khóa")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.UserDto>>> searchUsers(
             @RequestParam String keyword,
             @RequestParam(defaultValue = "0") int page,
@@ -168,8 +168,8 @@ public class ManagerController {
     }
     
     @DeleteMapping("/users/{userId}")
-    @Operation(summary = "Delete User", description = "Xóa tài khoản người dùng (backup doanh thu trước khi xóa)")
-    @PreAuthorize("hasRole('MANAGER')")
+    @Operation(summary = "Delete User", description = "Xóa tài khoản người dùng (ADMIN có thể xóa Manager)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<String>> deleteUser(@PathVariable Long userId) {
         log.info("DELETE /api/manager/users/{}", userId);
         
@@ -177,11 +177,108 @@ public class ManagerController {
         return ResponseEntity.ok(ApiResponse.success("Đã xóa tài khoản người dùng thành công"));
     }
     
+    @PutMapping("/users/{userId}/promote")
+    @Operation(summary = "Promote to Manager", description = "Nâng cấp User lên làm Manager (CHỈ ADMIN)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.UserDto>> promoteToManager(
+            @PathVariable Long userId) {
+        
+        log.info("PUT /api/manager/users/{}/promote", userId);
+        
+        com.utetea.backend.dto.UserDto user = managerService.promoteToManager(userId);
+        return ResponseEntity.ok(ApiResponse.success("Đã nâng cấp thành Manager thành công", user));
+    }
+    
+    @PutMapping("/users/{userId}/demote")
+    @Operation(summary = "Demote to User", description = "Hạ cấp Manager xuống User thường (CHỈ ADMIN)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.UserDto>> demoteToUser(
+            @PathVariable Long userId) {
+        
+        log.info("PUT /api/manager/users/{}/demote", userId);
+        
+        com.utetea.backend.dto.UserDto user = managerService.demoteToUser(userId);
+        return ResponseEntity.ok(ApiResponse.success("Đã hạ cấp xuống User thành công", user));
+    }
+    
+    // ==================== STORE ASSIGNMENT FOR MANAGER ====================
+    
+    @GetMapping("/my-stores")
+    @Operation(summary = "Get My Managed Stores", description = "Lấy danh sách cửa hàng mà Manager hiện tại được quản lý")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<java.util.List<com.utetea.backend.dto.StoreDto>>> getMyManagedStores() {
+        log.info("GET /api/manager/my-stores");
+        
+        var stores = managerService.getMyManagedStores();
+        return ResponseEntity.ok(ApiResponse.success("Stores loaded", stores));
+    }
+    
+    @GetMapping("/users/{userId}/stores")
+    @Operation(summary = "Get Manager's Stores", description = "Lấy danh sách cửa hàng mà Manager được gán quản lý")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<java.util.List<com.utetea.backend.dto.StoreDto>>> getManagedStores(
+            @PathVariable Long userId) {
+        
+        log.info("GET /api/manager/users/{}/stores", userId);
+        
+        var stores = managerService.getManagedStores(userId);
+        return ResponseEntity.ok(ApiResponse.success("Stores loaded", stores));
+    }
+    
+    @PostMapping("/users/{userId}/stores/{storeId}")
+    @Operation(summary = "Assign Store to Manager", description = "Gán cửa hàng cho Manager quản lý (CHỈ ADMIN)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.UserDto>> assignStoreToManager(
+            @PathVariable Long userId,
+            @PathVariable Long storeId) {
+        
+        log.info("POST /api/manager/users/{}/stores/{}", userId, storeId);
+        
+        com.utetea.backend.dto.UserDto user = managerService.assignStoreToManager(userId, storeId);
+        return ResponseEntity.ok(ApiResponse.success("Đã gán cửa hàng cho Manager thành công", user));
+    }
+    
+    @PutMapping("/users/{userId}/stores")
+    @Operation(summary = "Assign Multiple Stores to Manager", description = "Gán nhiều cửa hàng cho Manager (CHỈ ADMIN)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.UserDto>> assignStoresToManager(
+            @PathVariable Long userId,
+            @RequestBody java.util.List<Long> storeIds) {
+        
+        log.info("PUT /api/manager/users/{}/stores - storeIds: {}", userId, storeIds);
+        
+        com.utetea.backend.dto.UserDto user = managerService.assignStoresToManager(userId, storeIds);
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật danh sách cửa hàng cho Manager", user));
+    }
+    
+    @DeleteMapping("/users/{userId}/stores/{storeId}")
+    @Operation(summary = "Remove Store from Manager", description = "Bỏ gán cửa hàng khỏi Manager (CHỈ ADMIN)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.UserDto>> removeStoreFromManager(
+            @PathVariable Long userId,
+            @PathVariable Long storeId) {
+        
+        log.info("DELETE /api/manager/users/{}/stores/{}", userId, storeId);
+        
+        com.utetea.backend.dto.UserDto user = managerService.removeStoreFromManager(userId, storeId);
+        return ResponseEntity.ok(ApiResponse.success("Đã bỏ gán cửa hàng khỏi Manager", user));
+    }
+    
+    @GetMapping("/users/{userId}/is-super-manager")
+    @Operation(summary = "Check Super Manager", description = "Kiểm tra Manager có phải Super Manager (quản lý tất cả) không")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Boolean>> isSuperManager(@PathVariable Long userId) {
+        log.info("GET /api/manager/users/{}/is-super-manager", userId);
+        
+        boolean isSuperManager = managerService.isSuperManager(userId);
+        return ResponseEntity.ok(ApiResponse.success(isSuperManager));
+    }
+    
     // ==================== REVENUE STATISTICS ====================
     
     @GetMapping("/statistics/revenue")
     @Operation(summary = "Revenue Statistics", description = "Thống kê doanh thu theo ngày/tháng và top sản phẩm")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<com.utetea.backend.dto.RevenueStatisticsDto>> getRevenueStatistics(
             @RequestParam(defaultValue = "7") Integer days,
             @RequestParam(defaultValue = "6") Integer months) {
@@ -196,7 +293,7 @@ public class ManagerController {
     
     @PostMapping("/categories")
     @Operation(summary = "Create Category", description = "Tạo danh mục mới")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<com.utetea.backend.dto.DrinkCategoryDto>> createCategory(
             @RequestBody java.util.Map<String, String> categoryData) {
         
@@ -215,7 +312,7 @@ public class ManagerController {
     
     @PutMapping("/categories/{id}")
     @Operation(summary = "Update Category", description = "Cập nhật danh mục")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<com.utetea.backend.dto.DrinkCategoryDto>> updateCategory(
             @PathVariable Long id,
             @RequestBody java.util.Map<String, String> categoryData) {

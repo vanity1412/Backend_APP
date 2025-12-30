@@ -73,6 +73,35 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             LocalDateTime endDate, 
             Pageable pageable);
     
+    // ==================== STORE-BASED QUERIES FOR MANAGER ====================
+    
+    // Lấy orders theo store
+    Page<Order> findByStoreIdOrderByCreatedAtDesc(Long storeId, Pageable pageable);
+    
+    // Lấy orders theo store và status
+    Page<Order> findByStoreIdAndStatusOrderByCreatedAtDesc(Long storeId, OrderStatus status, Pageable pageable);
+    
+    // Lấy orders theo nhiều stores
+    @Query("SELECT o FROM Order o WHERE o.store.id IN :storeIds ORDER BY o.createdAt DESC")
+    Page<Order> findByStoreIdInOrderByCreatedAtDesc(@Param("storeIds") List<Long> storeIds, Pageable pageable);
+    
+    // Lấy orders theo nhiều stores và status
+    @Query("SELECT o FROM Order o WHERE o.store.id IN :storeIds AND o.status = :status ORDER BY o.createdAt DESC")
+    Page<Order> findByStoreIdInAndStatusOrderByCreatedAtDesc(
+        @Param("storeIds") List<Long> storeIds, 
+        @Param("status") OrderStatus status, 
+        Pageable pageable);
+    
+    // Đếm orders theo store
+    Long countByStoreId(Long storeId);
+    
+    // Đếm orders theo store và status
+    Long countByStoreIdAndStatus(Long storeId, OrderStatus status);
+    
+    // Đếm orders theo nhiều stores và status
+    @Query("SELECT COUNT(o) FROM Order o WHERE o.store.id IN :storeIds AND o.status = :status")
+    Long countByStoreIdInAndStatus(@Param("storeIds") List<Long> storeIds, @Param("status") OrderStatus status);
+    
     // Delete all orders by user ID
     @Modifying
     void deleteByUserId(Long userId);

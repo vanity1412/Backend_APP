@@ -72,31 +72,33 @@ public class SecurityConfig {
                         // Manager test endpoint (for debugging)
                         .requestMatchers("/api/manager/test").permitAll()
                         
-                        // Manager only endpoints
-                        .requestMatchers("/api/manager/**").hasRole("MANAGER")
-                        .requestMatchers("/api/admin/**").hasRole("MANAGER")
+                        // Admin only endpoints - quản lý cao nhất
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         
-                        // User endpoints
-                        .requestMatchers("/api/orders/**").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/group-orders/**").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/group-orders/*/chat/**").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/me/**").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/vouchers/validate").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/cart/**").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/vnpay/create-payment").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/vnpay/create-payment-amount").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/vnpay/create-order-after-payment").hasAnyRole("USER", "MANAGER")
+                        // Manager endpoints - ADMIN cũng có quyền truy cập
+                        .requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "ADMIN")
+                        
+                        // User endpoints - tất cả roles đều có quyền
+                        .requestMatchers("/api/orders/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/group-orders/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/group-orders/*/chat/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/me/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/vouchers/validate").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/cart/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/vnpay/create-payment").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/vnpay/create-payment-amount").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/vnpay/create-order-after-payment").hasAnyRole("USER", "MANAGER", "ADMIN")
                         
                         // Review endpoints - public for reading, authenticated for writing
                         .requestMatchers("/api/reviews/drink/**").permitAll()
-                        .requestMatchers("/api/reviews/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/reviews/**").hasAnyRole("USER", "MANAGER", "ADMIN")
                         
                         // Live Chat endpoints
-                        .requestMatchers("/api/chat/**").hasAnyRole("USER", "MANAGER")
-                        .requestMatchers("/api/chat/manager/**").hasRole("MANAGER")
+                        .requestMatchers("/api/chat/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/chat/manager/**").hasAnyRole("MANAGER", "ADMIN")
                         
                         // Predictive Order endpoints
-                        .requestMatchers("/api/predictive-order/**").hasAnyRole("USER", "MANAGER")
+                        .requestMatchers("/api/predictive-order/**").hasAnyRole("USER", "MANAGER", "ADMIN")
                         
                         // All other requests need authentication
                         .anyRequest().authenticated()

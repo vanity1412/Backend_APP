@@ -4,7 +4,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum UserRole {
     USER,
-    MANAGER;
+    MANAGER,
+    ADMIN;  // Admin - quản lý cao nhất, có quyền cấp quyền cho Manager
     
     @JsonValue
     public String toValue() {

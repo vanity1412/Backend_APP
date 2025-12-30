@@ -36,6 +36,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByRole(UserRole role);
     
+    // Tìm managers quản lý store cụ thể
+    @Query("SELECT u FROM User u JOIN u.managedStores s WHERE u.role = 'MANAGER' AND s.id = :storeId")
+    List<User> findManagersByStoreId(@Param("storeId") Long storeId);
+    
+    // Tìm user với managed stores (eager load)
+    @Query("SELECT u FROM User u LEFT JOIN FETCH u.managedStores WHERE u.id = :userId")
+    Optional<User> findByIdWithManagedStores(@Param("userId") Long userId);
+    
+    // Tìm user với managed stores theo username
+    @Query("SELECT u FROM User u LEFT JOIN FETCH u.managedStores WHERE u.username = :username")
+    Optional<User> findByUsernameWithManagedStores(@Param("username") String username);
+    
     // Cộng điểm loyalty cho user
     @Modifying
     @Query("UPDATE User u SET u.points = u.points + :points WHERE u.id = :userId")

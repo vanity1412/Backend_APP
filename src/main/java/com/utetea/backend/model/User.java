@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
 @Entity @Table(name = "users")
@@ -53,4 +55,41 @@ public class User extends AuditEntity {
 
     @Column(length = 255)
     private String avatarUrl;
+    
+    /**
+     * Danh sách các cửa hàng mà Manager được phép quản lý
+     * Nếu rỗng = quản lý tất cả (Super Manager)
+     */
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "manager_stores",
+        joinColumns = @JoinColumn(name = "user_id"),
+        inverseJoinColumns = @JoinColumn(name = "store_id")
+    )
+    private Set<Store> managedStores = new HashSet<>();
+    
+    /**
+     * Kiểm tra xem Manager có quyền quản lý store này không
+     */
+    public boolean canManageStore(Long storeId) {
+        // Nếu không phải Manager thì không có quyền
+        if (this.role != UserRole.MANAGER) {
+            return false;
+        }
+        // Nếu managedStores rỗng = Super Manager, quản lý tất cả
+        if (this.managedStores == null || this.managedStores.isEmpty()) {
+            return true;
+        }
+        // Kiểm tra store có trong danh sách được gán không
+        return this.managedStores.stream()
+            .anyMatch(store -> store.getId().equals(storeId));
+    }
+    
+    /**
+     * Kiểm tra xem có phải Super Manager (quản lý tất cả) không
+     */
+    public boolean isSuperManager() {
+        return this.role == UserRole.MANAGER && 
+               (this.managedStores == null || this.managedStores.isEmpty());
+    }
 }
