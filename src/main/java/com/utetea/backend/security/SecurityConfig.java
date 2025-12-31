@@ -54,6 +54,7 @@ public class SecurityConfig {
                         
                         // Public endpoints (Auth - including OTP)
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/otp/**").permitAll()
                         .requestMatchers("/api/drinks/**").permitAll()
                         .requestMatchers("/api/stores/**").permitAll()
                         .requestMatchers("/api/categories/**").permitAll()

@@ -54,14 +54,14 @@ public class PromotionController {
     // ========== MANAGER APIs ==========
     
     @GetMapping("/manager/all")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<PromotionDto>>> getAllPromotionsForManager() {
         List<PromotionDto> promotions = promotionService.getAllPromotions();
         return ResponseEntity.ok(ApiResponse.success(promotions));
     }
 
     @PostMapping("/manager")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PromotionDto>> createPromotion(
             @Valid @RequestBody CreatePromotionRequest request,
             @RequestParam(defaultValue = "false") boolean sendNotification // Thêm tham số này
@@ -80,7 +80,7 @@ public class PromotionController {
     }
     
     @PutMapping("/manager/{id}")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PromotionDto>> updatePromotion(
             @PathVariable Long id,
             @Valid @RequestBody UpdatePromotionRequest request) {
@@ -89,14 +89,14 @@ public class PromotionController {
     }
     
     @DeleteMapping("/manager/{id}")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Void>> deletePromotion(@PathVariable Long id) {
         promotionService.deletePromotion(id);
         return ResponseEntity.ok(ApiResponse.success("Xóa voucher thành công", null));
     }
     
     @PatchMapping("/manager/{id}/toggle-status")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PromotionDto>> togglePromotionStatus(@PathVariable Long id) {
         PromotionDto promotion = promotionService.togglePromotionStatus(id);
         return ResponseEntity.ok(ApiResponse.success("Thay đổi trạng thái voucher thành công", promotion));

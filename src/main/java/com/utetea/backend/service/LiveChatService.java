@@ -101,7 +101,10 @@ public class LiveChatService {
         log.info("User {} started new conversation #{} at store {}", username, conversation.getId(), store.getStoreName());
 
         // Notify managers về conversation mới (chỉ managers quản lý store này)
-        ConversationDto dto = mapToDto(conversation);
+        // Fetch lại conversation với messages để trả về đầy đủ
+        ChatConversation fullConversation = conversationRepository.findByIdWithMessages(conversation.getId())
+            .orElse(conversation);
+        ConversationDto dto = mapToDto(fullConversation);
         webSocketService.notifyNewConversation(dto);
 
         // Gửi push notification cho Manager của store và Admin

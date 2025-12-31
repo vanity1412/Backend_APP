@@ -25,7 +25,7 @@ public class LiveChatController {
      * User bắt đầu cuộc hội thoại mới
      */
     @PostMapping("/conversations")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ConversationDto>> startConversation(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestBody StartConversationRequest request) {
@@ -37,7 +37,7 @@ public class LiveChatController {
      * Gửi tin nhắn
      */
     @PostMapping("/messages")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<MessageDto>> sendMessage(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestBody SendMessageRequest request) {
@@ -49,7 +49,7 @@ public class LiveChatController {
      * Lấy danh sách conversation của user
      */
     @GetMapping("/conversations/my")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<ConversationListDto>>> getMyConversations(
             @AuthenticationPrincipal UserDetails userDetails) {
         List<ConversationListDto> conversations = chatService.getUserConversations(userDetails.getUsername());
@@ -60,7 +60,7 @@ public class LiveChatController {
      * Lấy chi tiết conversation
      */
     @GetMapping("/conversations/{id}")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ConversationDto>> getConversation(
             @AuthenticationPrincipal UserDetails userDetails,
             @PathVariable Long id) {
@@ -72,7 +72,7 @@ public class LiveChatController {
      * Đóng conversation
      */
     @PostMapping("/conversations/{id}/close")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ConversationDto>> closeConversation(
             @AuthenticationPrincipal UserDetails userDetails,
             @PathVariable Long id) {
