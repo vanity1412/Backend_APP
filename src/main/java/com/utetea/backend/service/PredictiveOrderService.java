@@ -37,173 +37,166 @@ public class PredictiveOrderService {
      * Luôn trả về gợi ý - nếu không có lịch sử thì gợi ý sản phẩm phổ biến
      */
     public PredictiveOrderDto getPrediction(Long userId, String weatherCondition) {
-        log.info("Getting prediction for userId: {}", userId);
-        
-        List<Order> orders = orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId);
-        log.info("Found {} orders for user {}", orders.size(), userId);
-        
-        LocalDateTime now = LocalDateTime.now();
-        int currentHour = now.getHour();
-        DayOfWeek currentDay = now.getDayOfWeek();
-        
-        // Nếu không có lịch sử đặt hàng → gợi ý sản phẩm phổ biến
-        if (orders.isEmpty()) {
-            log.info("No orders found for user {}, returning popular drink", userId);
-            return getPopularDrinkPrediction(weatherCondition);
-        }
-        
-        // Phân tích patterns
-        Map<Long, DrinkPattern> drinkPatterns = analyzeDrinkPatterns(orders, currentHour, currentDay);
-        
-        // Nếu không tìm thấy pattern → gợi ý sản phẩm phổ biến
-        if (drinkPatterns.isEmpty()) {
-            log.info("No drink patterns found for user, returning popular drink");
-            return getPopularDrinkPrediction(weatherCondition);
-        }
-        
-        // Tìm drink có score cao nhất
-        DrinkPattern bestPattern = drinkPatterns.values().stream()
-                .max(Comparator.comparingDouble(DrinkPattern::getScore))
-                .orElse(null);
-        
-        log.info("Best pattern: drink={}, score={}", 
-                bestPattern != null ? bestPattern.getDrinkName() : "null",
-                bestPattern != null ? bestPattern.getScore() : 0);
-        
-        // Nếu confidence quá thấp → gợi ý sản phẩm phổ biến
-        if (bestPattern == null || bestPattern.getScore() < MIN_CONFIDENCE) {
-            log.info("Confidence too low: {} < {}, returning popular drink", 
-                    bestPattern != null ? bestPattern.getScore() : 0, MIN_CONFIDENCE);
-            return getPopularDrinkPrediction(weatherCondition);
-        }
-        
-        // Tìm sizeId từ sizeName và drinkId
-        if (bestPattern.getSizeName() != null && !bestPattern.getSizeName().isEmpty()) {
-            drinkSizeRepository.findByDrinkIdAndSizeName(bestPattern.getDrinkId(), bestPattern.getSizeName())
-                    .ifPresent(size -> bestPattern.setSizeId(size.getId()));
-            log.info("Found sizeId: {} for sizeName: {} and drinkId: {}", 
-                    bestPattern.sizeId, bestPattern.getSizeName(), bestPattern.getDrinkId());
-        }
-        
-        // Nếu không tìm được sizeId, lấy size đầu tiên của drink
-        if (bestPattern.sizeId == null) {
-            List<com.utetea.backend.model.DrinkSize> sizes = drinkSizeRepository.findByDrinkId(bestPattern.getDrinkId());
-            if (!sizes.isEmpty()) {
-                bestPattern.setSizeId(sizes.get(0).getId());
-                log.info("Using default sizeId: {} for drink: {} (total sizes: {})", 
-                        bestPattern.sizeId, bestPattern.getDrinkId(), sizes.size());
-            } else {
-                log.warn("No sizes found for drink: {}", bestPattern.getDrinkId());
+        try {
+            log.info("Getting prediction for userId: {}", userId);
+            
+            List<Order> orders;
+            try {
+                orders = orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId);
+                log.info("Found {} orders for user {}", orders.size(), userId);
+            } catch (Exception e) {
+                log.error("Error fetching orders for user {}: {}", userId, e.getMessage());
+                // Fallback: dùng query đơn giản hơn
+                orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+                log.info("Fallback: Found {} orders for user {}", orders.size(), userId);
             }
+            
+            LocalDateTime now = LocalDateTime.now();
+            int currentHour = now.getHour();
+            DayOfWeek currentDay = now.getDayOfWeek();
+            
+            // Nếu không có lịch sử đặt hàng → gợi ý sản phẩm phổ biến
+            if (orders == null || orders.isEmpty()) {
+                log.info("No orders found for user {}, returning popular drink", userId);
+                return getPopularDrinkPrediction(weatherCondition);
+            }
+            
+            // Phân tích patterns
+            Map<Long, DrinkPattern> drinkPatterns = analyzeDrinkPatterns(orders, currentHour, currentDay);
+            
+            // Nếu không tìm thấy pattern → gợi ý sản phẩm phổ biến
+            if (drinkPatterns == null || drinkPatterns.isEmpty()) {
+                log.info("No drink patterns found for user, returning popular drink");
+                return getPopularDrinkPrediction(weatherCondition);
+            }
+            
+            // Tìm drink có score cao nhất
+            DrinkPattern bestPattern = drinkPatterns.values().stream()
+                    .max(Comparator.comparingDouble(DrinkPattern::getScore))
+                    .orElse(null);
+            
+            log.info("Best pattern: drink={}, score={}", 
+                    bestPattern != null ? bestPattern.getDrinkName() : "null",
+                    bestPattern != null ? bestPattern.getScore() : 0);
+            
+            // Nếu confidence quá thấp → gợi ý sản phẩm phổ biến
+            if (bestPattern == null || bestPattern.getScore() < MIN_CONFIDENCE) {
+                log.info("Confidence too low: {} < {}, returning popular drink", 
+                        bestPattern != null ? bestPattern.getScore() : 0, MIN_CONFIDENCE);
+                return getPopularDrinkPrediction(weatherCondition);
+            }
+            
+            // Tìm sizeId từ sizeName và drinkId
+            if (bestPattern.getSizeName() != null && !bestPattern.getSizeName().isEmpty()) {
+                drinkSizeRepository.findByDrinkIdAndSizeName(bestPattern.getDrinkId(), bestPattern.getSizeName())
+                        .ifPresent(size -> bestPattern.setSizeId(size.getId()));
+                log.info("Found sizeId: {} for sizeName: {} and drinkId: {}", 
+                        bestPattern.sizeId, bestPattern.getSizeName(), bestPattern.getDrinkId());
+            }
+            
+            // Nếu không tìm được sizeId, lấy size đầu tiên của drink
+            if (bestPattern.sizeId == null) {
+                List<com.utetea.backend.model.DrinkSize> sizes = drinkSizeRepository.findByDrinkId(bestPattern.getDrinkId());
+                if (!sizes.isEmpty()) {
+                    bestPattern.setSizeId(sizes.get(0).getId());
+                    log.info("Using default sizeId: {} for drink: {} (total sizes: {})", 
+                            bestPattern.sizeId, bestPattern.getDrinkId(), sizes.size());
+                } else {
+                    log.warn("No sizes found for drink: {}", bestPattern.getDrinkId());
+                }
+            }
+            
+            // Build prediction response
+            List<String> reasons = buildTriggerReasons(bestPattern, currentHour, currentDay, weatherCondition);
+            
+            return PredictiveOrderDto.builder()
+                    .hasPrediction(true)
+                    .message(buildPredictionMessage(bestPattern))
+                    .predictedDrink(bestPattern.toPredictedDrink())
+                    .triggerReasons(reasons)
+                    .confidenceScore(bestPattern.getScore())
+                    .build();
+                    
+        } catch (Exception e) {
+            log.error("Error in getPrediction for userId {}: {}", userId, e.getMessage(), e);
+            // Trả về gợi ý phổ biến khi có lỗi
+            return getPopularDrinkPrediction(weatherCondition);
         }
-        
-        // Build prediction response
-        List<String> reasons = buildTriggerReasons(bestPattern, currentHour, currentDay, weatherCondition);
-        
-        return PredictiveOrderDto.builder()
-                .hasPrediction(true)
-                .message(buildPredictionMessage(bestPattern))
-                .predictedDrink(bestPattern.toPredictedDrink())
-                .triggerReasons(reasons)
-                .confidenceScore(bestPattern.getScore())
-                .build();
     }
     
     /**
      * Lấy gợi ý sản phẩm phổ biến nhất khi không có lịch sử
      */
     private PredictiveOrderDto getPopularDrinkPrediction(String weatherCondition) {
-        log.info("Getting popular drink prediction");
-        
-        // Lấy sản phẩm phổ biến nhất từ tất cả đơn hàng DONE
-        List<Order> allOrders = orderRepository.findAll();
-        Map<Long, Integer> drinkOrderCount = new HashMap<>();
-        
-        for (Order order : allOrders) {
-            if (order.getStatus() == OrderStatus.DONE && order.getItems() != null) {
-                for (OrderItem item : order.getItems()) {
-                    if (item.getDrink() != null) {
-                        Long drinkId = item.getDrink().getId();
-                        drinkOrderCount.merge(drinkId, item.getQuantity(), Integer::sum);
-                    }
+        try {
+            log.info("Getting popular drink prediction");
+            
+            // Lấy drink đầu tiên active (đơn giản và nhanh)
+            List<Drink> activeDrinks = drinkRepository.findByIsActiveTrue();
+            
+            if (activeDrinks == null || activeDrinks.isEmpty()) {
+                log.warn("No drinks available for prediction");
+                return PredictiveOrderDto.builder()
+                        .hasPrediction(false)
+                        .message("Không có sản phẩm nào để gợi ý")
+                        .build();
+            }
+            
+            // Lấy drink đầu tiên
+            Drink popularDrink = activeDrinks.get(0);
+            log.info("Using first active drink: {}", popularDrink.getName());
+            
+            // Lấy size mặc định
+            List<com.utetea.backend.model.DrinkSize> sizes = drinkSizeRepository.findByDrinkId(popularDrink.getId());
+            Long sizeId = null;
+            String sizeName = null;
+            if (sizes != null && !sizes.isEmpty()) {
+                sizeId = sizes.get(0).getId();
+                sizeName = sizes.get(0).getSizeName();
+            }
+            
+            // Build reasons
+            List<String> reasons = new ArrayList<>();
+            reasons.add("Đây là món được yêu thích nhất");
+            
+            if (weatherCondition != null && !weatherCondition.isEmpty()) {
+                if (weatherCondition.equalsIgnoreCase("hot") || weatherCondition.equalsIgnoreCase("sunny")) {
+                    reasons.add("Thời tiết nóng, thích hợp với đồ uống mát");
+                } else if (weatherCondition.equalsIgnoreCase("cold") || weatherCondition.equalsIgnoreCase("rainy")) {
+                    reasons.add("Thời tiết se lạnh, thích hợp với đồ uống ấm");
                 }
             }
-        }
-        
-        // Tìm drink được đặt nhiều nhất
-        Long popularDrinkId = drinkOrderCount.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .map(Map.Entry::getKey)
-                .orElse(null);
-        
-        Drink popularDrink = null;
-        if (popularDrinkId != null) {
-            popularDrink = drinkRepository.findById(popularDrinkId).orElse(null);
-        }
-        
-        // Nếu không tìm được từ orders, lấy drink đầu tiên active
-        if (popularDrink == null) {
-            List<Drink> activeDrinks = drinkRepository.findByIsActiveTrue();
-            if (!activeDrinks.isEmpty()) {
-                popularDrink = activeDrinks.get(0);
-                log.info("No popular drink from orders, using first active drink: {}", popularDrink.getName());
-            }
-        }
-        
-        if (popularDrink == null) {
-            log.warn("No drinks available for prediction");
+            
+            PredictedDrink predictedDrink = PredictedDrink.builder()
+                    .drinkId(popularDrink.getId())
+                    .drinkName(popularDrink.getName())
+                    .drinkImage(popularDrink.getImageUrl())
+                    .sizeName(sizeName)
+                    .sizeId(sizeId)
+                    .price(popularDrink.getBasePrice())
+                    .orderCount(0)
+                    .lastOrderTime(null)
+                    .toppings(new ArrayList<>())
+                    .note(null)
+                    .build();
+            
+            log.info("Returning popular drink prediction: {}", popularDrink.getName());
+            
+            return PredictiveOrderDto.builder()
+                    .hasPrediction(true)
+                    .message("Bạn có muốn thử " + popularDrink.getName() + " không?")
+                    .predictedDrink(predictedDrink)
+                    .triggerReasons(reasons)
+                    .confidenceScore(0.7)
+                    .build();
+                    
+        } catch (Exception e) {
+            log.error("Error in getPopularDrinkPrediction: {}", e.getMessage(), e);
             return PredictiveOrderDto.builder()
                     .hasPrediction(false)
-                    .message("Không có sản phẩm nào để gợi ý")
+                    .message("Không thể tải gợi ý")
                     .build();
         }
-        
-        // Lấy size mặc định
-        List<com.utetea.backend.model.DrinkSize> sizes = drinkSizeRepository.findByDrinkId(popularDrink.getId());
-        Long sizeId = null;
-        String sizeName = null;
-        if (!sizes.isEmpty()) {
-            sizeId = sizes.get(0).getId();
-            sizeName = sizes.get(0).getSizeName();
-        }
-        
-        int totalOrders = drinkOrderCount.getOrDefault(popularDrink.getId(), 0);
-        
-        // Build reasons
-        List<String> reasons = new ArrayList<>();
-        reasons.add("Đây là món được yêu thích nhất" + (totalOrders > 0 ? " (" + totalOrders + " lượt đặt)" : ""));
-        
-        if (weatherCondition != null && !weatherCondition.isEmpty()) {
-            if (weatherCondition.equalsIgnoreCase("hot") || weatherCondition.equalsIgnoreCase("sunny")) {
-                reasons.add("Thời tiết nóng, thích hợp với đồ uống mát");
-            } else if (weatherCondition.equalsIgnoreCase("cold") || weatherCondition.equalsIgnoreCase("rainy")) {
-                reasons.add("Thời tiết se lạnh, thích hợp với đồ uống ấm");
-            }
-        }
-        
-        PredictedDrink predictedDrink = PredictedDrink.builder()
-                .drinkId(popularDrink.getId())
-                .drinkName(popularDrink.getName())
-                .drinkImage(popularDrink.getImageUrl())
-                .sizeName(sizeName)
-                .sizeId(sizeId)
-                .price(popularDrink.getBasePrice())
-                .orderCount(totalOrders)
-                .lastOrderTime(null)
-                .toppings(new ArrayList<>())
-                .note(null)
-                .build();
-        
-        log.info("Returning popular drink prediction: {} (ordered {} times)", 
-                popularDrink.getName(), totalOrders);
-        
-        return PredictiveOrderDto.builder()
-                .hasPrediction(true)
-                .message("Bạn có muốn thử " + popularDrink.getName() + " không?")
-                .predictedDrink(predictedDrink)
-                .triggerReasons(reasons)
-                .confidenceScore(0.7) // Default confidence cho popular drink
-                .build();
     }
 
     
