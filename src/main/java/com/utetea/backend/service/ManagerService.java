@@ -229,6 +229,10 @@ public class ManagerService {
             summary.setTopSellingDrinks(topSellingDrinks);
             summary.setIsAdmin(isAdmin);
             
+            // Get top rated drinks
+            List<DashboardSummaryDto.TopRatedDrinkDto> topRatedDrinks = getTopRatedDrinks();
+            summary.setTopRatedDrinks(topRatedDrinks);
+            
             // Thêm thông tin stores được quản lý (cho Manager)
             if (!isAdmin && manager.getManagedStores() != null) {
                 List<DashboardSummaryDto.ManagedStoreInfo> managedStoreInfos = manager.getManagedStores().stream()
@@ -263,6 +267,48 @@ public class ManagerService {
         } catch (Exception e) {
             log.warn("Error getting backup revenue: {}", e.getMessage());
             return BigDecimal.ZERO;
+        }
+    }
+    
+    /**
+     * Lấy top 5 sản phẩm được đánh giá cao nhất
+     */
+    private List<DashboardSummaryDto.TopRatedDrinkDto> getTopRatedDrinks() {
+        try {
+            String query = """
+                SELECT r.drink.id, r.drink.name, r.drink.imageUrl,
+                       AVG(r.rating) as avgRating,
+                       COUNT(r) as totalReviews
+                FROM Review r
+                GROUP BY r.drink.id, r.drink.name, r.drink.imageUrl
+                HAVING COUNT(r) >= 1
+                ORDER BY AVG(r.rating) DESC, COUNT(r) DESC
+                """;
+            
+            List<Object[]> results = entityManager.createQuery(query, Object[].class)
+                .setMaxResults(5)
+                .getResultList();
+            
+            List<DashboardSummaryDto.TopRatedDrinkDto> topRatedDrinks = new ArrayList<>();
+            for (Object[] row : results) {
+                Long drinkId = (Long) row[0];
+                String drinkName = (String) row[1];
+                String drinkImage = (String) row[2];
+                Double avgRating = (Double) row[3];
+                Long totalReviews = (Long) row[4];
+                
+                // Làm tròn rating đến 1 chữ số thập phân
+                avgRating = Math.round(avgRating * 10.0) / 10.0;
+                
+                topRatedDrinks.add(new DashboardSummaryDto.TopRatedDrinkDto(
+                    drinkId, drinkName, drinkImage, avgRating, totalReviews
+                ));
+            }
+            
+            return topRatedDrinks;
+        } catch (Exception e) {
+            log.warn("Error getting top rated drinks: {}", e.getMessage());
+            return new ArrayList<>();
         }
     }
     

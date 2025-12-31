@@ -6,11 +6,14 @@ import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.*;
 import com.utetea.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +21,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ReviewService {
     
     private final ReviewRepository reviewRepository;
@@ -25,6 +29,7 @@ public class ReviewService {
     private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
     private final DrinkRepository drinkRepository;
+    private final DeletedUserReviewBackupRepository deletedUserReviewBackupRepository;
     
     @Transactional
     public ReviewDto createReview(String username, CreateReviewRequest request) {
@@ -163,6 +168,222 @@ public class ReviewService {
                 .comment(review.getComment())
                 .isAnonymous(review.getIsAnonymous())
                 .createdAt(review.getCreatedAt())
+                .build();
+    }
+    
+    // ==================== ADMIN/MANAGER REVIEW MANAGEMENT ====================
+    
+    /**
+     * Lấy tất cả đánh giá (bao gồm cả backup từ user đã xóa) - CHO ADMIN/MANAGER
+     */
+    @Transactional(readOnly = true)
+    public Page<ReviewManagementDto> getAllReviewsForAdmin(Pageable pageable) {
+        log.info("Getting all reviews for admin management");
+        
+        // Lấy reviews hiện tại
+        Page<Review> activeReviews = reviewRepository.findAll(pageable);
+        
+        List<ReviewManagementDto> result = activeReviews.getContent().stream()
+                .map(this::toManagementDto)
+                .collect(Collectors.toList());
+        
+        return new PageImpl<>(result, pageable, activeReviews.getTotalElements());
+    }
+    
+    /**
+     * Lấy đánh giá theo sản phẩm (bao gồm backup) - CHO ADMIN/MANAGER
+     */
+    @Transactional(readOnly = true)
+    public Page<ReviewManagementDto> getReviewsByDrinkForAdmin(Long drinkId, boolean includeBackup, Pageable pageable) {
+        log.info("Getting reviews for drink {} (includeBackup: {})", drinkId, includeBackup);
+        
+        List<ReviewManagementDto> allReviews = new ArrayList<>();
+        
+        // Lấy reviews hiện tại
+        Page<Review> activeReviews = reviewRepository.findByDrinkId(drinkId, pageable);
+        allReviews.addAll(activeReviews.getContent().stream()
+                .map(this::toManagementDto)
+                .collect(Collectors.toList()));
+        
+        // Thêm backup reviews nếu cần
+        if (includeBackup) {
+            List<DeletedUserReviewBackup> backupReviews = 
+                deletedUserReviewBackupRepository.findByDrinkIdOrderByReviewCreatedAtDesc(drinkId);
+            allReviews.addAll(backupReviews.stream()
+                    .map(this::backupToManagementDto)
+                    .collect(Collectors.toList()));
+        }
+        
+        // Sort by createdAt desc
+        allReviews.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+        
+        long totalElements = activeReviews.getTotalElements();
+        if (includeBackup) {
+            totalElements += deletedUserReviewBackupRepository.countByDrinkId(drinkId);
+        }
+        
+        return new PageImpl<>(allReviews, pageable, totalElements);
+    }
+    
+    /**
+     * Lấy thống kê đánh giá tổng hợp (bao gồm backup) - CHO ADMIN/MANAGER
+     */
+    @Transactional(readOnly = true)
+    public ReviewManagementDto.ReviewStatistics getReviewStatisticsForAdmin(Long drinkId) {
+        log.info("Getting review statistics for drink {}", drinkId);
+        
+        // Thống kê từ reviews hiện tại
+        Double activeAvgRating = reviewRepository.getAverageRatingByDrinkId(drinkId);
+        Long activeCount = reviewRepository.countByDrinkId(drinkId);
+        List<Object[]> activeDistribution = reviewRepository.getRatingDistributionByDrinkId(drinkId);
+        
+        // Thống kê từ backup
+        Double backupAvgRating = deletedUserReviewBackupRepository.getAverageRatingByDrinkId(drinkId);
+        Long backupCount = deletedUserReviewBackupRepository.countByDrinkId(drinkId);
+        List<Object[]> backupDistribution = deletedUserReviewBackupRepository.getRatingDistributionByDrinkId(drinkId);
+        
+        // Tính tổng hợp
+        long totalReviews = (activeCount != null ? activeCount : 0) + (backupCount != null ? backupCount : 0);
+        
+        // Tính average rating tổng hợp
+        double totalAvgRating = 0.0;
+        if (totalReviews > 0) {
+            double activeSum = (activeAvgRating != null ? activeAvgRating : 0) * (activeCount != null ? activeCount : 0);
+            double backupSum = (backupAvgRating != null ? backupAvgRating : 0) * (backupCount != null ? backupCount : 0);
+            totalAvgRating = (activeSum + backupSum) / totalReviews;
+        }
+        
+        // Tính distribution tổng hợp
+        Map<Integer, Long> distribution = new HashMap<>();
+        for (int i = 1; i <= 5; i++) {
+            distribution.put(i, 0L);
+        }
+        
+        for (Object[] row : activeDistribution) {
+            Integer rating = (Integer) row[0];
+            Long count = (Long) row[1];
+            distribution.merge(rating, count, Long::sum);
+        }
+        
+        for (Object[] row : backupDistribution) {
+            Integer rating = (Integer) row[0];
+            Long count = (Long) row[1];
+            distribution.merge(rating, count, Long::sum);
+        }
+        
+        return ReviewManagementDto.ReviewStatistics.builder()
+                .totalReviews(totalReviews)
+                .activeReviews(activeCount != null ? activeCount : 0)
+                .backupReviews(backupCount != null ? backupCount : 0)
+                .averageRating(Math.round(totalAvgRating * 10.0) / 10.0)
+                .fiveStarCount(distribution.get(5))
+                .fourStarCount(distribution.get(4))
+                .threeStarCount(distribution.get(3))
+                .twoStarCount(distribution.get(2))
+                .oneStarCount(distribution.get(1))
+                .build();
+    }
+    
+    /**
+     * Xóa đánh giá bởi Admin/Manager
+     */
+    @Transactional
+    public void deleteReviewByAdmin(Long reviewId) {
+        log.info("Admin deleting review {}", reviewId);
+        
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new ResourceNotFoundException("Review not found"));
+        
+        reviewRepository.delete(review);
+        log.info("Review {} deleted by admin", reviewId);
+    }
+    
+    /**
+     * Lấy tất cả backup reviews - CHO ADMIN
+     */
+    @Transactional(readOnly = true)
+    public Page<ReviewManagementDto> getBackupReviews(Pageable pageable) {
+        log.info("Getting backup reviews for admin");
+        
+        Page<DeletedUserReviewBackup> backups = deletedUserReviewBackupRepository.findAll(pageable);
+        
+        List<ReviewManagementDto> result = backups.getContent().stream()
+                .map(this::backupToManagementDto)
+                .collect(Collectors.toList());
+        
+        return new PageImpl<>(result, pageable, backups.getTotalElements());
+    }
+    
+    /**
+     * Backup reviews của user trước khi xóa tài khoản
+     */
+    @Transactional
+    public void backupUserReviews(User user) {
+        log.info("Backing up reviews for user {}", user.getId());
+        
+        List<Review> reviews = reviewRepository.findByUserId(user.getId());
+        int backupCount = 0;
+        
+        for (Review review : reviews) {
+            DeletedUserReviewBackup backup = DeletedUserReviewBackup.builder()
+                    .deletedUserId(user.getId())
+                    .deletedUsername(user.getUsername())
+                    .deletedUserFullname(user.getFullName())
+                    .originalReviewId(review.getId())
+                    .drinkId(review.getDrink().getId())
+                    .drinkName(review.getDrink().getName())
+                    .orderId(review.getOrder().getId())
+                    .orderItemId(review.getOrderItem().getId())
+                    .rating(review.getRating())
+                    .comment(review.getComment())
+                    .isAnonymous(review.getIsAnonymous())
+                    .reviewCreatedAt(review.getCreatedAt())
+                    .build();
+            
+            deletedUserReviewBackupRepository.save(backup);
+            backupCount++;
+        }
+        
+        log.info("Backed up {} reviews for user {}", backupCount, user.getId());
+    }
+    
+    private ReviewManagementDto toManagementDto(Review review) {
+        return ReviewManagementDto.builder()
+                .id(review.getId())
+                .userId(review.getUser().getId())
+                .userName(review.getUser().getUsername())
+                .userFullName(review.getIsAnonymous() ? "Ẩn danh" : review.getUser().getFullName())
+                .userAvatar(review.getIsAnonymous() ? null : review.getUser().getAvatarUrl())
+                .drinkId(review.getDrink().getId())
+                .drinkName(review.getDrink().getName())
+                .orderId(review.getOrder().getId())
+                .orderItemId(review.getOrderItem().getId())
+                .rating(review.getRating())
+                .comment(review.getComment())
+                .isAnonymous(review.getIsAnonymous())
+                .createdAt(review.getCreatedAt())
+                .isFromDeletedUser(false)
+                .isHidden(false)
+                .build();
+    }
+    
+    private ReviewManagementDto backupToManagementDto(DeletedUserReviewBackup backup) {
+        return ReviewManagementDto.builder()
+                .id(backup.getId())
+                .userId(backup.getDeletedUserId())
+                .userName(backup.getDeletedUsername() + " (đã xóa)")
+                .userFullName(backup.getIsAnonymous() ? "Ẩn danh" : backup.getDeletedUserFullname())
+                .userAvatar(null)
+                .drinkId(backup.getDrinkId())
+                .drinkName(backup.getDrinkName())
+                .orderId(backup.getOrderId())
+                .orderItemId(backup.getOrderItemId())
+                .rating(backup.getRating())
+                .comment(backup.getComment())
+                .isAnonymous(backup.getIsAnonymous())
+                .createdAt(backup.getReviewCreatedAt())
+                .isFromDeletedUser(true)
+                .isHidden(false)
                 .build();
     }
 }

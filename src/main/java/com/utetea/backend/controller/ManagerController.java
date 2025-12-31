@@ -28,6 +28,7 @@ public class ManagerController {
     
     private final ManagerService managerService;
     private final ForecastService forecastService;
+    private final com.utetea.backend.service.ReviewService reviewService;
     
     @GetMapping("/test")
     @Operation(summary = "Test Auth", description = "Test authentication và role")
@@ -332,7 +333,7 @@ public class ManagerController {
     
     @DeleteMapping("/categories/{id}")
     @Operation(summary = "Delete Category", description = "Xóa danh mục (soft delete)")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<String>> deleteCategory(@PathVariable Long id) {
         log.info("DELETE /api/manager/categories/{}", id);
         
@@ -344,7 +345,7 @@ public class ManagerController {
     
     @GetMapping("/forecast")
     @Operation(summary = "Full Forecast", description = "Dự báo doanh thu, giờ cao điểm, nhân sự và cảnh báo quá tải")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ForecastDto>> getFullForecast() {
         log.info("GET /api/manager/forecast");
         ForecastDto forecast = forecastService.getFullForecast();
@@ -353,7 +354,7 @@ public class ManagerController {
     
     @GetMapping("/forecast/revenue")
     @Operation(summary = "Revenue Forecast", description = "Dự báo doanh thu theo ngày/tuần/tháng")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ForecastDto.RevenueForecast>> getRevenueForecast() {
         log.info("GET /api/manager/forecast/revenue");
         ForecastDto.RevenueForecast forecast = forecastService.calculateRevenueForecast();
@@ -362,7 +363,7 @@ public class ManagerController {
     
     @GetMapping("/forecast/peak-hours")
     @Operation(summary = "Peak Hours Analysis", description = "Phân tích giờ cao điểm")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<java.util.List<ForecastDto.PeakHourAnalysis>>> getPeakHours() {
         log.info("GET /api/manager/forecast/peak-hours");
         var peakHours = forecastService.analyzePeakHours();
@@ -371,7 +372,7 @@ public class ManagerController {
     
     @GetMapping("/forecast/low-stock")
     @Operation(summary = "Low Stock Warnings", description = "Cảnh báo món sắp hết dựa trên tốc độ bán")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<java.util.List<ForecastDto.LowStockWarning>>> getLowStockWarnings() {
         log.info("GET /api/manager/forecast/low-stock");
         var warnings = forecastService.analyzeLowStock();
@@ -380,7 +381,7 @@ public class ManagerController {
     
     @GetMapping("/forecast/staffing")
     @Operation(summary = "Staffing Recommendations", description = "Đề xuất nhân sự theo ngày")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<java.util.List<ForecastDto.StaffingRecommendation>>> getStaffingRecommendations() {
         log.info("GET /api/manager/forecast/staffing");
         var recommendations = forecastService.generateStaffingRecommendations();
@@ -389,11 +390,85 @@ public class ManagerController {
     
     @GetMapping("/forecast/overload")
     @Operation(summary = "Overload Warnings", description = "Cảnh báo nguy cơ quá tải")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<java.util.List<ForecastDto.OverloadWarning>>> getOverloadWarnings() {
         log.info("GET /api/manager/forecast/overload");
         var warnings = forecastService.detectOverloadRisks();
         return ResponseEntity.ok(ApiResponse.success("Overload warnings loaded", warnings));
+    }
+    
+    // ==================== REVIEW MANAGEMENT ====================
+    
+    @GetMapping("/reviews")
+    @Operation(summary = "Get All Reviews", description = "Lấy tất cả đánh giá sản phẩm (bao gồm backup từ user đã xóa)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.ReviewManagementDto>>> getAllReviews(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("GET /api/manager/reviews - page: {}, size: {}", page, size);
+        
+        org.springframework.data.domain.Pageable pageable = PageRequest.of(page, size);
+        Page<com.utetea.backend.dto.ReviewManagementDto> reviews = reviewService.getAllReviewsForAdmin(pageable);
+        
+        return ResponseEntity.ok(ApiResponse.success("Reviews loaded", reviews));
+    }
+    
+    @GetMapping("/reviews/drink/{drinkId}")
+    @Operation(summary = "Get Reviews by Drink", description = "Lấy đánh giá theo sản phẩm (có thể bao gồm backup)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.ReviewManagementDto>>> getReviewsByDrink(
+            @PathVariable Long drinkId,
+            @RequestParam(defaultValue = "true") boolean includeBackup,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("GET /api/manager/reviews/drink/{} - includeBackup: {}", drinkId, includeBackup);
+        
+        org.springframework.data.domain.Pageable pageable = PageRequest.of(page, size);
+        Page<com.utetea.backend.dto.ReviewManagementDto> reviews = 
+            reviewService.getReviewsByDrinkForAdmin(drinkId, includeBackup, pageable);
+        
+        return ResponseEntity.ok(ApiResponse.success("Reviews loaded", reviews));
+    }
+    
+    @GetMapping("/reviews/drink/{drinkId}/statistics")
+    @Operation(summary = "Get Review Statistics", description = "Lấy thống kê đánh giá tổng hợp của sản phẩm (bao gồm backup)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<com.utetea.backend.dto.ReviewManagementDto.ReviewStatistics>> getReviewStatistics(
+            @PathVariable Long drinkId) {
+        
+        log.info("GET /api/manager/reviews/drink/{}/statistics", drinkId);
+        
+        com.utetea.backend.dto.ReviewManagementDto.ReviewStatistics stats = 
+            reviewService.getReviewStatisticsForAdmin(drinkId);
+        
+        return ResponseEntity.ok(ApiResponse.success("Statistics loaded", stats));
+    }
+    
+    @GetMapping("/reviews/backup")
+    @Operation(summary = "Get Backup Reviews", description = "Lấy tất cả đánh giá backup từ user đã xóa")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.ReviewManagementDto>>> getBackupReviews(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("GET /api/manager/reviews/backup - page: {}, size: {}", page, size);
+        
+        org.springframework.data.domain.Pageable pageable = PageRequest.of(page, size);
+        Page<com.utetea.backend.dto.ReviewManagementDto> reviews = reviewService.getBackupReviews(pageable);
+        
+        return ResponseEntity.ok(ApiResponse.success("Backup reviews loaded", reviews));
+    }
+    
+    @DeleteMapping("/reviews/{reviewId}")
+    @Operation(summary = "Delete Review", description = "Xóa đánh giá (chỉ xóa review hiện tại, không xóa backup)")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<String>> deleteReview(@PathVariable Long reviewId) {
+        log.info("DELETE /api/manager/reviews/{}", reviewId);
+        
+        reviewService.deleteReviewByAdmin(reviewId);
+        return ResponseEntity.ok(ApiResponse.success("Đã xóa đánh giá thành công"));
     }
 
 }

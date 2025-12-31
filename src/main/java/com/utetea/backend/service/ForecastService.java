@@ -14,11 +14,13 @@ import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Month;
 import java.time.format.TextStyle;
 import java.util.*;
 
 /**
  * Service dự báo doanh thu và phân tích nguy cơ quá tải
+ * Sử dụng thuật toán Weighted Moving Average và phân tích xu hướng
  */
 @Service
 @RequiredArgsConstructor
@@ -31,6 +33,37 @@ public class ForecastService {
     private static final int ORDERS_PER_STAFF_PER_HOUR = 8;  // Mỗi nhân viên xử lý 8 đơn/giờ
     private static final int MAX_CAPACITY_PER_HOUR = 50;     // Công suất tối đa/giờ
     private static final int ANALYSIS_DAYS = 30;             // Phân tích 30 ngày gần nhất
+    private static final int RECENT_WEIGHT = 3;              // Trọng số cho tuần gần nhất
+    private static final int OLDER_WEIGHT = 1;               // Trọng số cho tuần cũ hơn
+    
+    // Các ngày lễ/sự kiện đặc biệt (tăng doanh thu)
+    private static final Set<String> SPECIAL_DATES = Set.of(
+        "01-01", // Tết Dương lịch
+        "14-02", // Valentine
+        "08-03", // Quốc tế Phụ nữ
+        "30-04", // Giải phóng miền Nam
+        "01-05", // Quốc tế Lao động
+        "20-10", // Phụ nữ Việt Nam
+        "20-11", // Nhà giáo Việt Nam
+        "24-12", // Giáng sinh
+        "25-12"  // Giáng sinh
+    );
+    
+    // Hệ số điều chỉnh theo tháng (mùa)
+    private static final Map<Month, Double> SEASONAL_FACTORS = Map.ofEntries(
+        Map.entry(Month.JANUARY, 0.9),   // Sau Tết, giảm
+        Map.entry(Month.FEBRUARY, 1.1),  // Tết Nguyên đán
+        Map.entry(Month.MARCH, 1.0),
+        Map.entry(Month.APRIL, 1.0),
+        Map.entry(Month.MAY, 1.1),       // Hè bắt đầu
+        Map.entry(Month.JUNE, 1.2),      // Mùa hè nóng
+        Map.entry(Month.JULY, 1.2),      // Mùa hè nóng
+        Map.entry(Month.AUGUST, 1.1),
+        Map.entry(Month.SEPTEMBER, 1.0), // Khai giảng
+        Map.entry(Month.OCTOBER, 1.0),
+        Map.entry(Month.NOVEMBER, 1.0),
+        Map.entry(Month.DECEMBER, 1.15)  // Giáng sinh, cuối năm
+    );
     
     /**
      * Lấy toàn bộ dữ liệu dự báo
@@ -80,48 +113,78 @@ public class ForecastService {
     }
     
     /**
-     * Dự báo doanh thu
+     * Dự báo doanh thu sử dụng Weighted Moving Average
+     * Có tính đến: ngày trong tuần, mùa, sự kiện đặc biệt, xu hướng gần đây
      */
     @Transactional(readOnly = true)
     public RevenueForecast calculateRevenueForecast() {
-        log.info("Calculating revenue forecast");
+        log.info("Calculating revenue forecast with weighted average");
         
         RevenueForecast forecast = new RevenueForecast();
         
         try {
-            // Lấy dữ liệu lịch sử theo ngày trong tuần
-            Map<DayOfWeek, BigDecimal> avgRevenueByDayOfWeek = getAvgRevenueByDayOfWeek();
-            Map<DayOfWeek, Long> avgOrdersByDayOfWeek = getAvgOrdersByDayOfWeek();
+            // Lấy dữ liệu lịch sử theo ngày trong tuần (có trọng số)
+            Map<DayOfWeek, BigDecimal> weightedAvgRevenue = getWeightedAvgRevenueByDayOfWeek();
+            Map<DayOfWeek, Long> weightedAvgOrders = getWeightedAvgOrdersByDayOfWeek();
             
             // Dự báo hôm nay
             LocalDate today = LocalDate.now();
             DayOfWeek todayDow = today.getDayOfWeek();
-            BigDecimal todayForecast = avgRevenueByDayOfWeek.getOrDefault(todayDow, BigDecimal.ZERO);
+            BigDecimal todayForecast = weightedAvgRevenue.getOrDefault(todayDow, BigDecimal.ZERO);
             
-            // Điều chỉnh theo tiến độ trong ngày
+            // Áp dụng hệ số mùa
+            todayForecast = applySeasonalFactor(todayForecast, today);
+            
+            // Áp dụng hệ số ngày đặc biệt
+            todayForecast = applySpecialDateFactor(todayForecast, today);
+            
+            // Điều chỉnh theo tiến độ trong ngày (real-time adjustment)
             int currentHour = LocalDateTime.now().getHour();
-            if (currentHour > 0 && currentHour < 22) {
+            if (currentHour >= 8 && currentHour < 22) {
                 BigDecimal todayActual = getTodayRevenue();
-                double progressRatio = currentHour / 14.0; // Giả sử hoạt động 14 tiếng/ngày
-                if (progressRatio > 0 && todayActual.compareTo(BigDecimal.ZERO) > 0) {
-                    todayForecast = todayActual.divide(BigDecimal.valueOf(progressRatio), 2, RoundingMode.HALF_UP);
+                double progressRatio = (currentHour - 8) / 14.0; // Hoạt động 8h-22h (14 tiếng)
+                
+                if (progressRatio > 0.2 && todayActual.compareTo(BigDecimal.ZERO) > 0) {
+                    // Blend giữa dự báo và thực tế (càng muộn trong ngày càng tin thực tế hơn)
+                    BigDecimal projectedFromActual = todayActual.divide(
+                        BigDecimal.valueOf(progressRatio), 2, RoundingMode.HALF_UP);
+                    
+                    double actualWeight = Math.min(progressRatio * 1.5, 0.8); // Max 80% weight cho actual
+                    double forecastWeight = 1 - actualWeight;
+                    
+                    todayForecast = projectedFromActual.multiply(BigDecimal.valueOf(actualWeight))
+                        .add(todayForecast.multiply(BigDecimal.valueOf(forecastWeight)))
+                        .setScale(0, RoundingMode.HALF_UP);
                 }
             }
             forecast.setTodayForecast(todayForecast);
             
             // Dự báo ngày mai
-            DayOfWeek tomorrowDow = today.plusDays(1).getDayOfWeek();
-            forecast.setTomorrowForecast(avgRevenueByDayOfWeek.getOrDefault(tomorrowDow, BigDecimal.ZERO));
+            LocalDate tomorrow = today.plusDays(1);
+            BigDecimal tomorrowForecast = weightedAvgRevenue.getOrDefault(tomorrow.getDayOfWeek(), BigDecimal.ZERO);
+            tomorrowForecast = applySeasonalFactor(tomorrowForecast, tomorrow);
+            tomorrowForecast = applySpecialDateFactor(tomorrowForecast, tomorrow);
+            forecast.setTomorrowForecast(tomorrowForecast);
             
-            // Dự báo 7 ngày tới
+            // Dự báo 7 ngày tới với chi tiết
             BigDecimal weekForecast = BigDecimal.ZERO;
             List<DailyForecast> dailyForecasts = new ArrayList<>();
             
             for (int i = 0; i < 7; i++) {
                 LocalDate date = today.plusDays(i);
                 DayOfWeek dow = date.getDayOfWeek();
-                BigDecimal dayRevenue = avgRevenueByDayOfWeek.getOrDefault(dow, BigDecimal.ZERO);
-                Long dayOrders = avgOrdersByDayOfWeek.getOrDefault(dow, 0L);
+                
+                BigDecimal dayRevenue = weightedAvgRevenue.getOrDefault(dow, BigDecimal.ZERO);
+                dayRevenue = applySeasonalFactor(dayRevenue, date);
+                dayRevenue = applySpecialDateFactor(dayRevenue, date);
+                
+                Long dayOrders = weightedAvgOrders.getOrDefault(dow, 0L);
+                // Điều chỉnh orders theo cùng tỷ lệ với revenue
+                if (weightedAvgRevenue.getOrDefault(dow, BigDecimal.ONE).compareTo(BigDecimal.ZERO) > 0) {
+                    double revenueRatio = dayRevenue.divide(
+                        weightedAvgRevenue.getOrDefault(dow, BigDecimal.ONE), 4, RoundingMode.HALF_UP).doubleValue();
+                    dayOrders = Math.round(dayOrders * revenueRatio);
+                }
                 
                 weekForecast = weekForecast.add(dayRevenue);
                 
@@ -130,7 +193,7 @@ public class ForecastService {
                     dow.getDisplayName(TextStyle.FULL, new Locale("vi", "VN")),
                     dayRevenue,
                     dayOrders,
-                    calculateConfidence(dow)
+                    calculateConfidence(dow, date)
                 ));
             }
             forecast.setWeekForecast(weekForecast);
@@ -139,38 +202,91 @@ public class ForecastService {
             // Dự báo tháng (30 ngày)
             BigDecimal monthForecast = BigDecimal.ZERO;
             for (int i = 0; i < 30; i++) {
-                DayOfWeek dow = today.plusDays(i).getDayOfWeek();
-                monthForecast = monthForecast.add(avgRevenueByDayOfWeek.getOrDefault(dow, BigDecimal.ZERO));
+                LocalDate date = today.plusDays(i);
+                DayOfWeek dow = date.getDayOfWeek();
+                BigDecimal dayRevenue = weightedAvgRevenue.getOrDefault(dow, BigDecimal.ZERO);
+                dayRevenue = applySeasonalFactor(dayRevenue, date);
+                dayRevenue = applySpecialDateFactor(dayRevenue, date);
+                monthForecast = monthForecast.add(dayRevenue);
             }
             forecast.setMonthForecast(monthForecast);
             
-            // Tính tỷ lệ tăng trưởng
-            BigDecimal lastWeekRevenue = getLastWeekRevenue();
-            BigDecimal prevWeekRevenue = getPreviousWeekRevenue();
-            if (prevWeekRevenue.compareTo(BigDecimal.ZERO) > 0) {
-                double growthRate = lastWeekRevenue.subtract(prevWeekRevenue)
-                    .divide(prevWeekRevenue, 4, RoundingMode.HALF_UP)
-                    .multiply(BigDecimal.valueOf(100))
-                    .doubleValue();
-                forecast.setGrowthRate(growthRate);
-                forecast.setTrend(growthRate > 5 ? "UP" : growthRate < -5 ? "DOWN" : "STABLE");
-            } else {
-                forecast.setGrowthRate(0.0);
-                forecast.setTrend("STABLE");
-            }
+            // Tính tỷ lệ tăng trưởng và xu hướng
+            calculateGrowthAndTrend(forecast);
             
         } catch (Exception e) {
             log.error("Error calculating revenue forecast", e);
-            forecast.setTodayForecast(BigDecimal.ZERO);
-            forecast.setTomorrowForecast(BigDecimal.ZERO);
-            forecast.setWeekForecast(BigDecimal.ZERO);
-            forecast.setMonthForecast(BigDecimal.ZERO);
-            forecast.setGrowthRate(0.0);
-            forecast.setTrend("STABLE");
-            forecast.setDailyForecasts(new ArrayList<>());
+            setDefaultForecast(forecast);
         }
         
         return forecast;
+    }
+    
+    /**
+     * Áp dụng hệ số mùa
+     */
+    private BigDecimal applySeasonalFactor(BigDecimal amount, LocalDate date) {
+        Double factor = SEASONAL_FACTORS.getOrDefault(date.getMonth(), 1.0);
+        return amount.multiply(BigDecimal.valueOf(factor)).setScale(0, RoundingMode.HALF_UP);
+    }
+    
+    /**
+     * Áp dụng hệ số ngày đặc biệt (lễ, sự kiện)
+     */
+    private BigDecimal applySpecialDateFactor(BigDecimal amount, LocalDate date) {
+        String dateKey = String.format("%02d-%02d", date.getDayOfMonth(), date.getMonthValue());
+        if (SPECIAL_DATES.contains(dateKey)) {
+            return amount.multiply(BigDecimal.valueOf(1.3)).setScale(0, RoundingMode.HALF_UP); // +30%
+        }
+        return amount;
+    }
+    
+    /**
+     * Tính tỷ lệ tăng trưởng và xu hướng
+     */
+    private void calculateGrowthAndTrend(RevenueForecast forecast) {
+        BigDecimal lastWeekRevenue = getLastWeekRevenue();
+        BigDecimal prevWeekRevenue = getPreviousWeekRevenue();
+        BigDecimal twoWeeksAgoRevenue = getTwoWeeksAgoRevenue();
+        
+        if (prevWeekRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            // Tính growth rate
+            double growthRate = lastWeekRevenue.subtract(prevWeekRevenue)
+                .divide(prevWeekRevenue, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .doubleValue();
+            forecast.setGrowthRate(Math.round(growthRate * 10.0) / 10.0);
+            
+            // Xác định xu hướng dựa trên 3 tuần
+            boolean recentUp = lastWeekRevenue.compareTo(prevWeekRevenue) > 0;
+            boolean olderUp = prevWeekRevenue.compareTo(twoWeeksAgoRevenue) > 0;
+            
+            if (recentUp && olderUp) {
+                forecast.setTrend("UP");
+            } else if (!recentUp && !olderUp) {
+                forecast.setTrend("DOWN");
+            } else if (Math.abs(growthRate) < 5) {
+                forecast.setTrend("STABLE");
+            } else {
+                forecast.setTrend(recentUp ? "UP" : "DOWN");
+            }
+        } else {
+            forecast.setGrowthRate(0.0);
+            forecast.setTrend("STABLE");
+        }
+    }
+    
+    /**
+     * Set default values khi có lỗi
+     */
+    private void setDefaultForecast(RevenueForecast forecast) {
+        forecast.setTodayForecast(BigDecimal.ZERO);
+        forecast.setTomorrowForecast(BigDecimal.ZERO);
+        forecast.setWeekForecast(BigDecimal.ZERO);
+        forecast.setMonthForecast(BigDecimal.ZERO);
+        forecast.setGrowthRate(0.0);
+        forecast.setTrend("STABLE");
+        forecast.setDailyForecasts(new ArrayList<>());
     }
 
     
@@ -527,6 +643,88 @@ public class ForecastService {
     
     // ==================== HELPER METHODS ====================
     
+    /**
+     * Lấy doanh thu trung bình có trọng số theo ngày trong tuần
+     * Tuần gần nhất có trọng số cao hơn
+     */
+    private Map<DayOfWeek, BigDecimal> getWeightedAvgRevenueByDayOfWeek() {
+        String query = """
+            SELECT DAYOFWEEK(o.created_at) as dow,
+                   COALESCE(SUM(CASE WHEN o.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
+                                     THEN o.final_price * :recentWeight ELSE o.final_price * :olderWeight END), 0) as weighted_revenue,
+                   SUM(CASE WHEN o.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
+                            THEN :recentWeight ELSE :olderWeight END) as total_weight
+            FROM orders o
+            WHERE o.status = 'DONE'
+              AND o.created_at >= :startDate
+            GROUP BY DAYOFWEEK(o.created_at)
+            """;
+        
+        LocalDateTime startDate = LocalDateTime.now().minusDays(ANALYSIS_DAYS);
+        
+        @SuppressWarnings("unchecked")
+        List<Object[]> results = entityManager.createNativeQuery(query)
+            .setParameter("startDate", java.sql.Timestamp.valueOf(startDate))
+            .setParameter("recentWeight", RECENT_WEIGHT)
+            .setParameter("olderWeight", OLDER_WEIGHT)
+            .getResultList();
+        
+        Map<DayOfWeek, BigDecimal> weightedAvg = new EnumMap<>(DayOfWeek.class);
+        for (Object[] row : results) {
+            Integer mysqlDow = ((Number) row[0]).intValue();
+            BigDecimal weightedRevenue = row[1] instanceof BigDecimal ? 
+                (BigDecimal) row[1] : new BigDecimal(row[1].toString());
+            Double totalWeight = ((Number) row[2]).doubleValue();
+            
+            DayOfWeek dow = convertMysqlDowToJava(mysqlDow);
+            BigDecimal avg = totalWeight > 0 ? 
+                weightedRevenue.divide(BigDecimal.valueOf(totalWeight), 0, RoundingMode.HALF_UP) : 
+                BigDecimal.ZERO;
+            weightedAvg.put(dow, avg);
+        }
+        
+        return weightedAvg;
+    }
+    
+    /**
+     * Lấy số đơn trung bình có trọng số theo ngày trong tuần
+     */
+    private Map<DayOfWeek, Long> getWeightedAvgOrdersByDayOfWeek() {
+        String query = """
+            SELECT DAYOFWEEK(o.created_at) as dow,
+                   SUM(CASE WHEN o.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
+                            THEN :recentWeight ELSE :olderWeight END) as weighted_orders,
+                   COUNT(DISTINCT DATE(o.created_at)) as day_count
+            FROM orders o
+            WHERE o.status = 'DONE'
+              AND o.created_at >= :startDate
+            GROUP BY DAYOFWEEK(o.created_at)
+            """;
+        
+        LocalDateTime startDate = LocalDateTime.now().minusDays(ANALYSIS_DAYS);
+        
+        @SuppressWarnings("unchecked")
+        List<Object[]> results = entityManager.createNativeQuery(query)
+            .setParameter("startDate", java.sql.Timestamp.valueOf(startDate))
+            .setParameter("recentWeight", RECENT_WEIGHT)
+            .setParameter("olderWeight", OLDER_WEIGHT)
+            .getResultList();
+        
+        Map<DayOfWeek, Long> weightedAvg = new EnumMap<>(DayOfWeek.class);
+        for (Object[] row : results) {
+            Integer mysqlDow = ((Number) row[0]).intValue();
+            Double weightedOrders = ((Number) row[1]).doubleValue();
+            Long dayCount = ((Number) row[2]).longValue();
+            
+            DayOfWeek dow = convertMysqlDowToJava(mysqlDow);
+            // Chia cho số ngày để lấy trung bình
+            Long avg = dayCount > 0 ? Math.round(weightedOrders / dayCount) : 0L;
+            weightedAvg.put(dow, avg);
+        }
+        
+        return weightedAvg;
+    }
+    
     private Map<DayOfWeek, BigDecimal> getAvgRevenueByDayOfWeek() {
         String query = """
             SELECT DAYOFWEEK(o.created_at) as dow,
@@ -631,6 +829,22 @@ public class ForecastService {
         return result instanceof BigDecimal ? (BigDecimal) result : new BigDecimal(result.toString());
     }
     
+    /**
+     * Lấy doanh thu 2 tuần trước (để phân tích xu hướng)
+     */
+    private BigDecimal getTwoWeeksAgoRevenue() {
+        String query = """
+            SELECT COALESCE(SUM(o.final_price), 0)
+            FROM orders o
+            WHERE o.status = 'DONE'
+              AND o.created_at >= DATE_SUB(CURDATE(), INTERVAL 21 DAY)
+              AND o.created_at < DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+            """;
+        
+        Object result = entityManager.createNativeQuery(query).getSingleResult();
+        return result instanceof BigDecimal ? (BigDecimal) result : new BigDecimal(result.toString());
+    }
+    
     private DayOfWeek convertMysqlDowToJava(int mysqlDow) {
         // MySQL: 1=Sunday, 2=Monday, ..., 7=Saturday
         // Java: 1=Monday, ..., 7=Sunday
@@ -653,13 +867,26 @@ public class ForecastService {
         return "VERY_HIGH";
     }
     
-    private Double calculateConfidence(DayOfWeek dow) {
-        // Cuối tuần thường có biến động cao hơn -> độ tin cậy thấp hơn
-        return switch (dow) {
+    private Double calculateConfidence(DayOfWeek dow, LocalDate date) {
+        double baseConfidence = switch (dow) {
             case SATURDAY, SUNDAY -> 75.0;
             case FRIDAY -> 80.0;
             default -> 85.0;
         };
+        
+        // Giảm độ tin cậy cho ngày đặc biệt (khó dự đoán hơn)
+        String dateKey = String.format("%02d-%02d", date.getDayOfMonth(), date.getMonthValue());
+        if (SPECIAL_DATES.contains(dateKey)) {
+            baseConfidence -= 10;
+        }
+        
+        // Giảm độ tin cậy cho ngày xa hơn
+        long daysFromNow = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), date);
+        if (daysFromNow > 3) {
+            baseConfidence -= (daysFromNow - 3) * 2;
+        }
+        
+        return Math.max(50.0, baseConfidence);
     }
     
     private String generateStaffingReason(DayOfWeek dow, long totalOrders, int maxStaff) {

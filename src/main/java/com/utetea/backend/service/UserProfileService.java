@@ -36,6 +36,7 @@ public class UserProfileService {
     private final GroupChatMessageRepository groupChatMessageRepository;
     private final ChatConversationRepository chatConversationRepository;
     private final DeletedUserOrderBackupRepository deletedUserOrderBackupRepository;
+    private final DeletedUserReviewBackupRepository deletedUserReviewBackupRepository;
     private final AvatarUploadService avatarUploadService;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
@@ -127,6 +128,10 @@ public class UserProfileService {
             // Chỉ backup các order DONE để tính doanh thu
             log.info("Backing up DONE orders for user {}", userId);
             backupUserOrders(user);
+            
+            // BƯỚC 1.5: Backup reviews trước khi xóa (để manager vẫn xem được đánh giá)
+            log.info("Backing up reviews for user {}", userId);
+            backupUserReviews(user);
             
             // BƯỚC 2: Xóa các dữ liệu liên quan theo thứ tự để tránh lỗi khóa ngoại
             
@@ -224,6 +229,38 @@ public class UserProfileService {
         }
         
         log.info("Backed up {} DONE orders for user {}", backupCount, user.getId());
+    }
+    
+    /**
+     * Backup tất cả reviews của user vào bảng DeletedUserReviewBackup
+     * Để manager vẫn có thể xem lịch sử đánh giá sản phẩm
+     */
+    private void backupUserReviews(User user) {
+        List<Review> reviews = reviewRepository.findByUserId(user.getId());
+        int backupCount = 0;
+        
+        for (Review review : reviews) {
+            DeletedUserReviewBackup backup = DeletedUserReviewBackup.builder()
+                    .deletedUserId(user.getId())
+                    .deletedUsername(user.getUsername())
+                    .deletedUserFullname(user.getFullName())
+                    .originalReviewId(review.getId())
+                    .drinkId(review.getDrink().getId())
+                    .drinkName(review.getDrink().getName())
+                    .orderId(review.getOrder().getId())
+                    .orderItemId(review.getOrderItem().getId())
+                    .rating(review.getRating())
+                    .comment(review.getComment())
+                    .isAnonymous(review.getIsAnonymous())
+                    .reviewCreatedAt(review.getCreatedAt())
+                    .build();
+            
+            deletedUserReviewBackupRepository.save(backup);
+            backupCount++;
+            log.debug("Backed up review {} for user {}", review.getId(), user.getId());
+        }
+        
+        log.info("Backed up {} reviews for user {}", backupCount, user.getId());
     }
     
     /**

@@ -60,6 +60,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/categories/**").permitAll()
                         .requestMatchers("/api/promotions/**").permitAll()
                         .requestMatchers("/api/chatbot/**").permitAll()
+                        .requestMatchers("/api/weather/**").permitAll()
                         .requestMatchers("/assets/**").permitAll()
                         
                         // VNPAY endpoints
@@ -73,11 +74,11 @@ public class SecurityConfig {
                         // Manager test endpoint (for debugging)
                         .requestMatchers("/api/manager/test").permitAll()
                         
+                        // Manager endpoints - ADMIN và MANAGER đều có quyền truy cập
+                        .requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "ADMIN")
+                        
                         // Admin only endpoints - quản lý cao nhất
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        
-                        // Manager endpoints - ADMIN cũng có quyền truy cập
-                        .requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "ADMIN")
                         
                         // User endpoints - tất cả roles đều có quyền
                         .requestMatchers("/api/orders/**").hasAnyRole("USER", "MANAGER", "ADMIN")

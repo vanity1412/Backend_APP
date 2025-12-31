@@ -13,6 +13,7 @@ public class DashboardSummaryDto {
     private Long completedOrders;
     private Long canceledOrders;
     private List<TopSellingDrinkDto> topSellingDrinks;
+    private List<TopRatedDrinkDto> topRatedDrinks;
     
     // Thông tin về stores được quản lý (cho Manager)
     private List<ManagedStoreInfo> managedStores;
@@ -23,6 +24,15 @@ public class DashboardSummaryDto {
         private String drinkName;
         private Long totalSold;
         private BigDecimal revenue;
+    }
+    
+    @Getter @Setter @NoArgsConstructor @AllArgsConstructor
+    public static class TopRatedDrinkDto {
+        private Long drinkId;
+        private String drinkName;
+        private String drinkImage;
+        private Double averageRating;
+        private Long totalReviews;
     }
     
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor
