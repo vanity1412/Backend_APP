@@ -77,7 +77,7 @@ public class AuthService {
 //        return mapToLoginResponse(user, token);
 //    }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LoginResponse login(LoginRequest request) {
         // FIX Low #16: Replaced System.out.println with proper logging
         log.debug("========== LOGIN SERVICE START ==========");
