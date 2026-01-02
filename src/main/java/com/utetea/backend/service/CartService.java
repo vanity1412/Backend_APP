@@ -28,6 +28,7 @@ public class CartService {
     private final DrinkRepository drinkRepository;
     private final DrinkSizeRepository drinkSizeRepository;
     private final DrinkToppingRepository drinkToppingRepository;
+    private final OneSignalService oneSignalService;
     
     @Transactional
     public CartDto addToCart(Long userId, AddToCartRequest request) {
@@ -85,6 +86,22 @@ public class CartService {
         cartItemRepository.save(cartItem);
         
         log.info("Added item to cart: userId={}, drinkId={}, quantity={}", userId, request.getDrinkId(), request.getQuantity());
+        
+        // Gửi thông báo khi thêm món vào giỏ
+        try {
+            String title = "✅ Đã thêm vào giỏ hàng";
+            String content = drink.getName() + " x" + request.getQuantity() + " - " + totalPrice + "đ";
+            
+            java.util.Map<String, Object> data = new java.util.HashMap<>();
+            data.put("type", "CART_ITEM_ADDED");
+            data.put("drinkId", drink.getId());
+            data.put("drinkName", drink.getName());
+            data.put("quantity", request.getQuantity());
+            
+            oneSignalService.sendToUser(userId, title, content, data);
+        } catch (Exception e) {
+            log.error("Failed to send cart notification", e);
+        }
         
         return getCart(userId);
     }

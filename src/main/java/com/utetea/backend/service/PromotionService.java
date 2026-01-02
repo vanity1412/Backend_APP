@@ -26,6 +26,7 @@ public class PromotionService {
     
     private final PromotionRepository promotionRepository;
     private final PromotionMapper promotionMapper;
+    private final OneSignalService oneSignalService;
     
     // ========== USER APIs ==========
     
@@ -139,6 +140,24 @@ public class PromotionService {
         
         promotion = promotionRepository.save(promotion);
         log.info("Promotion created successfully with id: {}", promotion.getId());
+        
+        // Gửi thông báo voucher mới cho tất cả user
+        try {
+            if (promotion.getIsActive()) {
+                String title = "🎉 Voucher mới dành cho bạn!";
+                String content = promotion.getDescription() + " - Mã: " + promotion.getCode();
+                
+                java.util.Map<String, Object> data = new java.util.HashMap<>();
+                data.put("type", "NEW_VOUCHER");
+                data.put("voucherCode", promotion.getCode());
+                data.put("promotionId", promotion.getId());
+                
+                oneSignalService.sendToAll(title, content, data);
+                log.info("Sent new voucher notification to all users");
+            }
+        } catch (Exception e) {
+            log.error("Failed to send new voucher notification", e);
+        }
         
         return promotionMapper.toDto(promotion);
     }
