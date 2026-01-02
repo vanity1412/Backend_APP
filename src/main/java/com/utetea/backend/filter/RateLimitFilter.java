@@ -8,8 +8,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -20,12 +20,17 @@ import java.io.IOException;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RequiredArgsConstructor
 @Slf4j
 public class RateLimitFilter extends OncePerRequestFilter {
     
     private final RateLimitConfig rateLimitConfig;
     private final UserMonitoringService userMonitoringService;
+    
+    public RateLimitFilter(RateLimitConfig rateLimitConfig, 
+                           @Lazy UserMonitoringService userMonitoringService) {
+        this.rateLimitConfig = rateLimitConfig;
+        this.userMonitoringService = userMonitoringService;
+    }
     
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
