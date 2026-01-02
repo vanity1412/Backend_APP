@@ -40,6 +40,7 @@ public class OrderService {
     private final OneSignalService oneSignalService;
     private final MemberTierService memberTierService;
     private final RateLimitService rateLimitService;
+    private final UserMonitoringService userMonitoringService;
 
     @Transactional
     public OrderDto createOrder(String username, OrderRequest request) {
@@ -240,6 +241,14 @@ public class OrderService {
         order = orderRepository.save(order);
         log.info("Order created successfully with id: {}", order.getId());
 
+        // 🛡️ Log activity - Tạo đơn hàng
+        try {
+            userMonitoringService.logOrderCreate(user.getId(), order.getId(), 
+                order.getFinalPrice().doubleValue(), null);
+        } catch (Exception e) {
+            log.error("Failed to log order creation to monitoring", e);
+        }
+
         OrderDto orderDto = mapToDto(order);
 
         // WebSocket Notification
@@ -303,6 +312,15 @@ public class OrderService {
         order.setStatus(newStatus);
         order = orderRepository.save(order);
         orderRepository.flush();
+
+        // 🛡️ Log activity - Cập nhật trạng thái đơn hàng
+        try {
+            if (newStatus == OrderStatus.CANCELED) {
+                userMonitoringService.logOrderCancel(userId, orderId, null);
+            }
+        } catch (Exception e) {
+            log.error("Failed to log order status update to monitoring", e);
+        }
 
         OrderDto orderDto = mapToDto(order);
 

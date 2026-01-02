@@ -72,8 +72,10 @@ public class UserActivityLog extends AuditEntity {
         
         // Orders
         ORDER_CREATE,
+        ORDER_VIEW,
         ORDER_CANCEL,
         ORDER_CANCEL_MULTIPLE,
+        ORDER_STATUS_UPDATE,
         
         // Payments
         PAYMENT_SUCCESS,
@@ -84,12 +86,26 @@ public class UserActivityLog extends AuditEntity {
         PROMOTION_USE,
         PROMOTION_ABUSE_ATTEMPT,
         
+        // Cart
+        CART_ADD_ITEM,
+        CART_REMOVE_ITEM,
+        CART_UPDATE_QUANTITY,
+        CART_CLEAR,
+        
+        // Products
+        PRODUCT_VIEW,
+        PRODUCT_SEARCH,
+        
+        // Profile
+        PROFILE_VIEW,
+        PROFILE_UPDATE,
+        AVATAR_UPDATE,
+        
         // Rate Limiting
         RATE_LIMIT_HIT,
         SPAM_REQUEST,
         
         // Account
-        PROFILE_UPDATE,
         ACCOUNT_BLOCKED,
         ACCOUNT_UNBLOCKED,
         
@@ -97,6 +113,16 @@ public class UserActivityLog extends AuditEntity {
         BRUTE_FORCE_ATTEMPT,
         UNUSUAL_LOCATION,
         DEVICE_CHANGE,
+        
+        // Group Order
+        GROUP_ORDER_CREATE,
+        GROUP_ORDER_JOIN,
+        GROUP_ORDER_LEAVE,
+        GROUP_ORDER_CHAT,
+        
+        // Chat
+        LIVE_CHAT_START,
+        LIVE_CHAT_MESSAGE,
         
         // System
         API_ERROR,

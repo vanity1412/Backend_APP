@@ -37,17 +37,13 @@ public class MonitoringWebSocketService {
     }
 
     /**
-     * 📋 Gửi activity log mới (chỉ các hoạt động đáng chú ý)
+     * 📋 Gửi activity log mới - TẤT CẢ hoạt động
      */
     public void notifyNewActivity(UserActivityLogDto activity) {
         try {
-            // Chỉ broadcast các activity có risk level >= WARNING
-            if (activity.getRiskLevel() != null && 
-                !activity.getRiskLevel().equals("NORMAL")) {
-                log.info("📡 Broadcasting suspicious activity: {} - {}", 
-                    activity.getActivityType(), activity.getRiskLevel());
-                messagingTemplate.convertAndSend("/topic/monitoring/activities", activity);
-            }
+            log.info("📡 Broadcasting activity: {} - {} - {}", 
+                activity.getUsername(), activity.getActivityType(), activity.getRiskLevel());
+            messagingTemplate.convertAndSend("/topic/monitoring/activities", activity);
         } catch (Exception e) {
             log.error("Failed to send activity via WebSocket", e);
         }

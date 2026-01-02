@@ -87,16 +87,14 @@ public class UserMonitoringService {
         activityLog = activityLogRepository.save(activityLog);
         log.info("Activity logged: userId={}, type={}, risk={}", userId, activityType, riskLevel);
 
-        // 📡 Gửi WebSocket notification cho activity đáng chú ý
-        if (riskLevel != RiskLevel.NORMAL) {
-            try {
-                monitoringWebSocketService.notifyNewActivity(UserActivityLogDto.fromEntity(activityLog));
-            } catch (Exception e) {
-                log.error("Failed to send activity WebSocket notification", e);
-            }
+        // 📡 Gửi WebSocket notification cho TẤT CẢ activity
+        try {
+            monitoringWebSocketService.notifyNewActivity(UserActivityLogDto.fromEntity(activityLog));
+        } catch (Exception e) {
+            log.error("Failed to send activity WebSocket notification", e);
         }
 
-        // Async update risk score và check alerts
+        // Async update risk score và check alerts (chỉ cho activity có risk)
         if (userId != null && riskLevel != RiskLevel.NORMAL) {
             updateRiskScoreAsync(userId, activityType, riskLevel);
         }
@@ -196,6 +194,108 @@ public class UserMonitoringService {
     public void logAccountUnblocked(Long userId, Long unblockedBy, HttpServletRequest request) {
         logActivity(userId, ActivityType.ACCOUNT_UNBLOCKED, 
             "Tài khoản được mở khóa", RiskLevel.NORMAL, unblockedBy, request);
+    }
+
+    // ==================== NORMAL ACTIVITY LOGGING ====================
+
+    /**
+     * 🛒 Log tạo đơn hàng
+     */
+    @Transactional
+    public void logOrderCreate(Long userId, Long orderId, Double totalAmount, HttpServletRequest request) {
+        logActivity(userId, ActivityType.ORDER_CREATE, 
+            "Tạo đơn hàng #" + orderId + " - " + String.format("%,.0f", totalAmount) + "đ", 
+            RiskLevel.NORMAL, orderId, request);
+    }
+
+    /**
+     * 💳 Log thanh toán thành công
+     */
+    @Transactional
+    public void logPaymentSuccess(Long userId, Long orderId, String paymentMethod, HttpServletRequest request) {
+        logActivity(userId, ActivityType.PAYMENT_SUCCESS, 
+            "Thanh toán thành công đơn #" + orderId + " qua " + paymentMethod, 
+            RiskLevel.NORMAL, orderId, request);
+    }
+
+    /**
+     * 🛒 Log thêm vào giỏ hàng
+     */
+    @Transactional
+    public void logCartAddItem(Long userId, String productName, int quantity, HttpServletRequest request) {
+        logActivity(userId, ActivityType.CART_ADD_ITEM, 
+            "Thêm vào giỏ: " + productName + " x" + quantity, request);
+    }
+
+    /**
+     * 🛒 Log xóa khỏi giỏ hàng
+     */
+    @Transactional
+    public void logCartRemoveItem(Long userId, String productName, HttpServletRequest request) {
+        logActivity(userId, ActivityType.CART_REMOVE_ITEM, 
+            "Xóa khỏi giỏ: " + productName, request);
+    }
+
+    /**
+     * 👤 Log cập nhật profile
+     */
+    @Transactional
+    public void logProfileUpdate(Long userId, String updatedFields, HttpServletRequest request) {
+        logActivity(userId, ActivityType.PROFILE_UPDATE, 
+            "Cập nhật thông tin: " + updatedFields, request);
+    }
+
+    /**
+     * 🔍 Log xem sản phẩm
+     */
+    @Transactional
+    public void logProductView(Long userId, Long productId, String productName, HttpServletRequest request) {
+        logActivity(userId, ActivityType.PRODUCT_VIEW, 
+            "Xem sản phẩm: " + productName, RiskLevel.NORMAL, productId, request);
+    }
+
+    /**
+     * 🔍 Log tìm kiếm
+     */
+    @Transactional
+    public void logProductSearch(Long userId, String keyword, HttpServletRequest request) {
+        logActivity(userId, ActivityType.PRODUCT_SEARCH, 
+            "Tìm kiếm: " + keyword, request);
+    }
+
+    /**
+     * 👥 Log tạo group order
+     */
+    @Transactional
+    public void logGroupOrderCreate(Long userId, Long groupOrderId, HttpServletRequest request) {
+        logActivity(userId, ActivityType.GROUP_ORDER_CREATE, 
+            "Tạo đơn nhóm #" + groupOrderId, RiskLevel.NORMAL, groupOrderId, request);
+    }
+
+    /**
+     * 👥 Log tham gia group order
+     */
+    @Transactional
+    public void logGroupOrderJoin(Long userId, Long groupOrderId, HttpServletRequest request) {
+        logActivity(userId, ActivityType.GROUP_ORDER_JOIN, 
+            "Tham gia đơn nhóm #" + groupOrderId, RiskLevel.NORMAL, groupOrderId, request);
+    }
+
+    /**
+     * 💬 Log bắt đầu live chat
+     */
+    @Transactional
+    public void logLiveChatStart(Long userId, Long conversationId, HttpServletRequest request) {
+        logActivity(userId, ActivityType.LIVE_CHAT_START, 
+            "Bắt đầu chat hỗ trợ #" + conversationId, RiskLevel.NORMAL, conversationId, request);
+    }
+
+    /**
+     * 🚪 Log đăng xuất
+     */
+    @Transactional
+    public void logLogout(Long userId, HttpServletRequest request) {
+        logActivity(userId, ActivityType.LOGOUT, "Đăng xuất", request);
     }
 
     // ==================== RISK SCORE MANAGEMENT ====================
