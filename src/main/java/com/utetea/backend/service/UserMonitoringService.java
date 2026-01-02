@@ -36,6 +36,7 @@ public class UserMonitoringService {
     private final MonitoringAlertRepository alertRepository;
     private final UserRepository userRepository;
     private final OneSignalService oneSignalService;
+    private final MonitoringWebSocketService monitoringWebSocketService;
 
     // ==================== RISK SCORING RULES ====================
     private static final int SCORE_LOGIN_FAILED = 5;
@@ -85,6 +86,15 @@ public class UserMonitoringService {
 
         activityLog = activityLogRepository.save(activityLog);
         log.info("Activity logged: userId={}, type={}, risk={}", userId, activityType, riskLevel);
+
+        // 📡 Gửi WebSocket notification cho activity đáng chú ý
+        if (riskLevel != RiskLevel.NORMAL) {
+            try {
+                monitoringWebSocketService.notifyNewActivity(UserActivityLogDto.fromEntity(activityLog));
+            } catch (Exception e) {
+                log.error("Failed to send activity WebSocket notification", e);
+            }
+        }
 
         // Async update risk score và check alerts
         if (userId != null && riskLevel != RiskLevel.NORMAL) {
@@ -212,6 +222,15 @@ public class UserMonitoringService {
         
         riskScoreRepository.save(riskScore);
         
+        // 📡 Gửi WebSocket notification khi risk score thay đổi đáng kể
+        if (riskScore.getTotalScore() >= ALERT_THRESHOLD_WARNING) {
+            try {
+                monitoringWebSocketService.notifyRiskScoreUpdate(UserRiskScoreDto.fromEntity(riskScore));
+            } catch (Exception e) {
+                log.error("Failed to send risk score WebSocket notification", e);
+            }
+        }
+        
         // Check thresholds và tạo alerts
         checkRiskThresholds(userId, riskScore);
     }
@@ -277,6 +296,13 @@ public class UserMonitoringService {
             "Tài khoản tự động bị khóa",
             "User " + user.getUsername() + " đã bị tự động khóa do điểm rủi ro " + 
             riskScore.getTotalScore() + "/100 vượt ngưỡng " + AUTO_BLOCK_THRESHOLD);
+        
+        // 📡 Gửi WebSocket notification đặc biệt cho auto-block
+        try {
+            monitoringWebSocketService.notifyUserAutoBlocked(UserRiskScoreDto.fromEntity(riskScore));
+        } catch (Exception e) {
+            log.error("Failed to send auto-block WebSocket notification", e);
+        }
         
         log.warn("AUTO-BLOCKED user {} due to high risk score: {}", user.getUsername(), riskScore.getTotalScore());
     }
@@ -356,6 +382,13 @@ public class UserMonitoringService {
             .build();
         
         alert = alertRepository.save(alert);
+        
+        // 📡 Gửi WebSocket notification cho alert mới
+        try {
+            monitoringWebSocketService.notifyNewAlert(MonitoringAlertDto.fromEntity(alert));
+        } catch (Exception e) {
+            log.error("Failed to send alert WebSocket notification", e);
+        }
         
         // Gửi push notification cho Admin/Manager
         sendAlertNotification(alert);
