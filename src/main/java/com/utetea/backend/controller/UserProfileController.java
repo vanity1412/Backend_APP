@@ -20,7 +20,7 @@ import org.springframework.http.MediaType;
 @RequestMapping("/api/me")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
-@PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+@PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
 public class UserProfileController {
 
     private final UserProfileService userProfileService;

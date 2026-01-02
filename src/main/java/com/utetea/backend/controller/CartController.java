@@ -1,5 +1,20 @@
 package com.utetea.backend.controller;
 
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.utetea.backend.dto.AddToCartRequest;
 import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.CartDto;
@@ -7,16 +22,12 @@ import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.User;
 import com.utetea.backend.repository.UserRepository;
 import com.utetea.backend.service.CartService;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/cart")
@@ -24,7 +35,7 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin(origins = "*")
 @Tag(name = "🛒 Cart", description = "Quản lý giỏ hàng")
 @Slf4j
-@PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+@PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
 public class CartController {
     
     private final CartService cartService;

@@ -1,5 +1,22 @@
 package com.utetea.backend.controller;
 
+import java.io.UnsupportedEncodingException;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
 import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.OrderDto;
 import com.utetea.backend.dto.OrderRequest;
@@ -7,20 +24,11 @@ import com.utetea.backend.dto.VNPayPaymentRequest;
 import com.utetea.backend.dto.VNPayPaymentResponse;
 import com.utetea.backend.service.OrderService;
 import com.utetea.backend.service.VNPayService;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.*;
-
-import java.io.UnsupportedEncodingException;
-import java.util.HashMap;
-import java.util.Map;
 
 @Controller
 @RequestMapping("/api/vnpay")
@@ -33,7 +41,7 @@ public class VNPayController {
     private final OrderService orderService;
     
     @PostMapping("/create-payment")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     @ResponseBody
     public ResponseEntity<ApiResponse<VNPayPaymentResponse>> createPayment(
             @Valid @RequestBody VNPayPaymentRequest request,
@@ -55,7 +63,7 @@ public class VNPayController {
      * Tạo payment URL với amount (không cần orderId) - dùng cho flow VNPAY mới
      */
     @PostMapping("/create-payment-amount")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     @ResponseBody
     public ResponseEntity<ApiResponse<VNPayPaymentResponse>> createPaymentWithAmount(
             @RequestParam("amount") Long amount,
@@ -76,7 +84,7 @@ public class VNPayController {
      * Tạo đơn hàng SAU KHI thanh toán VNPAY thành công
      */
     @PostMapping("/create-order-after-payment")
-    @PreAuthorize("hasAnyRole('USER', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     @ResponseBody
     public ResponseEntity<ApiResponse<OrderDto>> createOrderAfterPayment(
             @Valid @RequestBody OrderRequest request,
