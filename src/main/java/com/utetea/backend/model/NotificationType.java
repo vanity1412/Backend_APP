@@ -7,5 +7,10 @@ public enum NotificationType {
     SYSTEM,              // Thông báo hệ thống
     CUSTOM,              // Thông báo tùy chỉnh từ Manager
     LIVE_CHAT,           // Tin nhắn tư vấn mới (cho Manager/Admin)
-    GROUP_CHAT           // Tin nhắn nhóm mới (cho members)
+    GROUP_CHAT,          // Tin nhắn nhóm mới (cho members)
+    
+    // 🛡️ User Monitoring Alerts
+    SECURITY_ALERT,      // Cảnh báo bảo mật cho Admin/Manager
+    USER_BLOCKED,        // Thông báo user bị khóa
+    HIGH_RISK_USER       // Cảnh báo user có điểm rủi ro cao
 }

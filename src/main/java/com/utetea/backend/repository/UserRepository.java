@@ -36,6 +36,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByRole(UserRole role);
     
+    // Tìm users theo nhiều roles (cho User Monitoring)
+    List<User> findByRoleIn(List<UserRole> roles);
+    
     // Tìm managers quản lý store cụ thể
     @Query("SELECT u FROM User u JOIN u.managedStores s WHERE u.role = 'MANAGER' AND s.id = :storeId")
     List<User> findManagersByStoreId(@Param("storeId") Long storeId);

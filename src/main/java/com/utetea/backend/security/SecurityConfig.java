@@ -77,6 +77,9 @@ public class SecurityConfig {
                         // Manager endpoints - ADMIN và MANAGER đều có quyền truy cập
                         .requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "ADMIN")
                         
+                        // 🛡️ User Monitoring endpoints - ADMIN và MANAGER
+                        .requestMatchers("/api/monitoring/**").hasAnyRole("MANAGER", "ADMIN")
+                        
                         // Admin only endpoints - quản lý cao nhất
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         
