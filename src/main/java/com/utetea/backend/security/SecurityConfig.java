@@ -3,6 +3,7 @@ package com.utetea.backend.security;
 import java.util.Arrays;
 import java.util.List;
 
+import com.utetea.backend.filter.BlockedIPFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -32,6 +33,7 @@ public class SecurityConfig {
     
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final BlockedIPFilter blockedIPFilter;
     
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -77,8 +79,11 @@ public class SecurityConfig {
                         // Manager endpoints - ADMIN và MANAGER đều có quyền truy cập
                         .requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "ADMIN")
                         
-                        // 🛡️ User Monitoring endpoints - ADMIN và MANAGER
-                        .requestMatchers("/api/monitoring/**").hasAnyRole("MANAGER", "ADMIN")
+                        // 🛡️ User Monitoring endpoints - CHỈ ADMIN
+                        .requestMatchers("/api/monitoring/**").hasRole("ADMIN")
+                        
+                        // 🚫 Blocked IP endpoints - CHỈ ADMIN
+                        .requestMatchers("/api/blocked-ips/**").hasRole("ADMIN")
                         
                         // Admin only endpoints - quản lý cao nhất
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -116,6 +121,7 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authenticationProvider(authenticationProvider())
+                .addFilterBefore(blockedIPFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         
         return http.build();

@@ -39,7 +39,7 @@ public class UserMonitoringController {
 
     @GetMapping("/dashboard")
     @Operation(summary = "Get Monitoring Dashboard", description = "Lấy tổng quan dashboard giám sát")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<MonitoringDashboardDto>> getDashboard() {
         log.info("GET /api/monitoring/dashboard");
         MonitoringDashboardDto dashboard = monitoringService.getDashboard();
@@ -50,7 +50,7 @@ public class UserMonitoringController {
 
     @GetMapping("/activities")
     @Operation(summary = "Get Activity Logs", description = "Lấy danh sách log hoạt động")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Page<UserActivityLogDto>>> getActivityLogs(
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) String activityType,
@@ -77,7 +77,7 @@ public class UserMonitoringController {
 
     @GetMapping("/activities/user/{userId}")
     @Operation(summary = "Get User Activity Logs", description = "Lấy log hoạt động của user cụ thể")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Page<UserActivityLogDto>>> getUserActivityLogs(
             @PathVariable Long userId,
             @RequestParam(defaultValue = "0") int page,
@@ -95,7 +95,7 @@ public class UserMonitoringController {
 
     @GetMapping("/alerts")
     @Operation(summary = "Get Alerts", description = "Lấy danh sách cảnh báo")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Page<MonitoringAlertDto>>> getAlerts(
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) String alertType,
@@ -124,7 +124,7 @@ public class UserMonitoringController {
 
     @GetMapping("/alerts/pending")
     @Operation(summary = "Get Pending Alerts", description = "Lấy danh sách cảnh báo chờ xử lý")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Page<MonitoringAlertDto>>> getPendingAlerts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -139,7 +139,7 @@ public class UserMonitoringController {
 
     @PutMapping("/alerts/{alertId}/handle")
     @Operation(summary = "Handle Alert", description = "Xử lý cảnh báo")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<MonitoringAlertDto>> handleAlert(
             @PathVariable Long alertId,
             @RequestBody HandleAlertRequest request) {
@@ -161,7 +161,7 @@ public class UserMonitoringController {
 
     @GetMapping("/risk-scores")
     @Operation(summary = "Get Risk Scores", description = "Lấy danh sách điểm rủi ro")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Page<UserRiskScoreDto>>> getRiskScores(
             @RequestParam(required = false) String riskLevel,
             @RequestParam(defaultValue = "0") int page,
@@ -178,7 +178,7 @@ public class UserMonitoringController {
 
     @GetMapping("/risk-scores/user/{userId}")
     @Operation(summary = "Get User Risk Score", description = "Lấy điểm rủi ro của user")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserRiskScoreDto>> getUserRiskScore(@PathVariable Long userId) {
         log.info("GET /api/monitoring/risk-scores/user/{}", userId);
         
@@ -188,7 +188,7 @@ public class UserMonitoringController {
 
     @PostMapping("/risk-scores/user/{userId}/note")
     @Operation(summary = "Add Admin Note", description = "Thêm ghi chú của admin cho user")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserRiskScoreDto>> addAdminNote(
             @PathVariable Long userId,
             @RequestBody Map<String, String> request) {
@@ -215,7 +215,7 @@ public class UserMonitoringController {
 
     @PostMapping("/users/{userId}/unblock")
     @Operation(summary = "Unblock User", description = "Mở khóa tài khoản user")
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> unblockUser(
             @PathVariable Long userId,
             @RequestBody Map<String, String> request) {
