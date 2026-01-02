@@ -29,6 +29,7 @@ public class CartService {
     private final DrinkSizeRepository drinkSizeRepository;
     private final DrinkToppingRepository drinkToppingRepository;
     private final OneSignalService oneSignalService;
+    private final UserMonitoringService userMonitoringService;
     
     @Transactional
     public CartDto addToCart(Long userId, AddToCartRequest request) {
@@ -87,6 +88,13 @@ public class CartService {
         
         log.info("Added item to cart: userId={}, drinkId={}, quantity={}", userId, request.getDrinkId(), request.getQuantity());
         
+        // 🛡️ Log activity - Thêm vào giỏ hàng
+        try {
+            userMonitoringService.logCartAddItem(userId, drink.getName(), request.getQuantity(), null);
+        } catch (Exception e) {
+            log.error("Failed to log cart add to monitoring", e);
+        }
+        
         // Gửi thông báo khi thêm món vào giỏ
         try {
             String title = "✅ Đã thêm vào giỏ hàng";
@@ -144,7 +152,15 @@ public class CartService {
             throw new IllegalArgumentException("Cart item does not belong to user");
         }
         
+        String productName = cartItem.getDrink().getName();
         cartItemRepository.delete(cartItem);
+        
+        // 🛡️ Log activity - Xóa khỏi giỏ hàng
+        try {
+            userMonitoringService.logCartRemoveItem(userId, productName, null);
+        } catch (Exception e) {
+            log.error("Failed to log cart remove to monitoring", e);
+        }
     }
     
     @Transactional

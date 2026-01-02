@@ -203,9 +203,20 @@ public class UserMonitoringService {
      */
     @Transactional
     public void logOrderCreate(Long userId, Long orderId, Double totalAmount, HttpServletRequest request) {
+        RiskLevel riskLevel = RiskLevel.NORMAL;
+        
+        // 🚨 Alert nếu đơn hàng giá trị cao bất thường (> 2 triệu)
+        if (totalAmount != null && totalAmount > 2000000) {
+            riskLevel = RiskLevel.WARNING;
+            createAlertIfNotExists(userId, AlertType.ORDER_ABUSE, AlertSeverity.LOW,
+                "Đơn hàng giá trị cao",
+                "User đặt đơn hàng #" + orderId + " với giá trị " + 
+                String.format("%,.0f", totalAmount) + "đ. Cần xác minh.");
+        }
+        
         logActivity(userId, ActivityType.ORDER_CREATE, 
             "Tạo đơn hàng #" + orderId + " - " + String.format("%,.0f", totalAmount) + "đ", 
-            RiskLevel.NORMAL, orderId, request);
+            riskLevel, orderId, request);
     }
 
     /**
@@ -223,8 +234,16 @@ public class UserMonitoringService {
      */
     @Transactional
     public void logCartAddItem(Long userId, String productName, int quantity, HttpServletRequest request) {
+        RiskLevel riskLevel = RiskLevel.NORMAL;
+        
+        // 🚨 Alert nếu thêm số lượng lớn bất thường (> 20)
+        if (quantity > 20) {
+            riskLevel = RiskLevel.WARNING;
+            log.warn("User {} added unusual quantity {} of {}", userId, quantity, productName);
+        }
+        
         logActivity(userId, ActivityType.CART_ADD_ITEM, 
-            "Thêm vào giỏ: " + productName + " x" + quantity, request);
+            "Thêm vào giỏ: " + productName + " x" + quantity, riskLevel, null, request);
     }
 
     /**
@@ -243,6 +262,58 @@ public class UserMonitoringService {
     public void logProfileUpdate(Long userId, String updatedFields, HttpServletRequest request) {
         logActivity(userId, ActivityType.PROFILE_UPDATE, 
             "Cập nhật thông tin: " + updatedFields, request);
+        
+        // 🚨 Check nếu thay đổi nhiều lần trong ngày
+        checkFrequentProfileChanges(userId, request);
+    }
+    
+    /**
+     * 🔐 Log đổi mật khẩu - QUAN TRỌNG
+     */
+    @Transactional
+    public void logPasswordChange(Long userId, HttpServletRequest request) {
+        logActivity(userId, ActivityType.PASSWORD_CHANGE, 
+            "Đổi mật khẩu thành công", RiskLevel.WARNING, null, request);
+        
+        // 🚨 Tạo alert thông báo cho admin biết
+        createAlertIfNotExists(userId, AlertType.SECURITY_VIOLATION, AlertSeverity.LOW,
+            "User đổi mật khẩu",
+            "User đã thay đổi mật khẩu. Nếu không phải user thực hiện, cần kiểm tra.");
+    }
+    
+    /**
+     * 🌐 Log đăng nhập từ IP/thiết bị mới
+     */
+    @Transactional
+    public void logNewDeviceLogin(Long userId, String deviceInfo, String ipAddress, HttpServletRequest request) {
+        logActivity(userId, ActivityType.DEVICE_CHANGE, 
+            "Đăng nhập từ thiết bị mới: " + deviceInfo + " (IP: " + ipAddress + ")", 
+            RiskLevel.WARNING, null, request);
+        
+        // 🚨 Tạo alert
+        createAlertIfNotExists(userId, AlertType.LOGIN_ANOMALY, AlertSeverity.MEDIUM,
+            "Đăng nhập từ thiết bị/IP mới",
+            "User đăng nhập từ thiết bị: " + deviceInfo + ", IP: " + ipAddress + 
+            ". Cần xác minh nếu đây không phải user thật.");
+    }
+    
+    /**
+     * 🚨 Check thay đổi profile thường xuyên
+     */
+    private void checkFrequentProfileChanges(Long userId, HttpServletRequest request) {
+        Instant since = Instant.now().minus(Duration.ofHours(24));
+        long changeCount = activityLogRepository.countByUserIdAndActivityTypeSince(
+            userId, ActivityType.PROFILE_UPDATE, since);
+        
+        if (changeCount >= 5) {
+            logActivity(userId, ActivityType.SECURITY_VIOLATION, 
+                "Thay đổi profile nhiều lần: " + changeCount + " lần trong 24h",
+                RiskLevel.SUSPICIOUS, null, request);
+            
+            createAlertIfNotExists(userId, AlertType.SECURITY_VIOLATION, AlertSeverity.MEDIUM,
+                "Thay đổi profile bất thường",
+                "User đã thay đổi thông tin profile " + changeCount + " lần trong 24h. Có thể là hành vi đáng ngờ.");
+        }
     }
 
     /**

@@ -40,6 +40,7 @@ public class UserProfileService {
     private final AvatarUploadService avatarUploadService;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
+    private final UserMonitoringService userMonitoringService;
 
     @Transactional(readOnly = true)
     public UserProfileDto getProfile(String username) {
@@ -75,6 +76,21 @@ public class UserProfileService {
         }
 
         user = userRepository.save(user);
+        
+        // 🛡️ Log activity - Cập nhật profile
+        try {
+            StringBuilder updatedFields = new StringBuilder();
+            if (request.getPhone() != null) updatedFields.append("phone, ");
+            if (request.getFullName() != null) updatedFields.append("fullName, ");
+            if (request.getAddress() != null) updatedFields.append("address, ");
+            if (request.getEmail() != null) updatedFields.append("email, ");
+            String fields = updatedFields.length() > 0 ? 
+                updatedFields.substring(0, updatedFields.length() - 2) : "none";
+            userMonitoringService.logProfileUpdate(user.getId(), fields, null);
+        } catch (Exception e) {
+            log.error("Failed to log profile update to monitoring", e);
+        }
+        
         return mapToProfileDto(user);
     }
 
@@ -112,6 +128,13 @@ public class UserProfileService {
         // Mã hóa mật khẩu mới và lưu xuống DB
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        
+        // 🛡️ Log activity - Đổi mật khẩu (QUAN TRỌNG)
+        try {
+            userMonitoringService.logPasswordChange(user.getId(), null);
+        } catch (Exception e) {
+            log.error("Failed to log password change to monitoring", e);
+        }
     }
 
     @Transactional

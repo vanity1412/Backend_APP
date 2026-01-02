@@ -30,6 +30,7 @@ public class ReviewService {
     private final UserRepository userRepository;
     private final DrinkRepository drinkRepository;
     private final DeletedUserReviewBackupRepository deletedUserReviewBackupRepository;
+    private final UserMonitoringService userMonitoringService;
     
     @Transactional
     public ReviewDto createReview(String username, CreateReviewRequest request) {
@@ -73,6 +74,16 @@ public class ReviewService {
         review.setIsAnonymous(request.getIsAnonymous() != null ? request.getIsAnonymous() : false);
         
         review = reviewRepository.save(review);
+        
+        // 🛡️ Log activity - Đánh giá sản phẩm
+        try {
+            userMonitoringService.logActivity(user.getId(), 
+                com.utetea.backend.model.UserActivityLog.ActivityType.PRODUCT_VIEW,
+                "Đánh giá " + review.getRating() + " sao cho " + orderItem.getDrink().getName(), null);
+        } catch (Exception e) {
+            log.error("Failed to log review to monitoring", e);
+        }
+        
         return toDto(review);
     }
     

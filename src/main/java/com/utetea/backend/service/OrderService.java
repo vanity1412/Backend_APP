@@ -333,6 +333,14 @@ public class OrderService {
 
         // Loyalty Points & Email (nếu DONE)
         if (newStatus == OrderStatus.DONE) {
+            // 🛡️ Log activity - Thanh toán thành công
+            try {
+                userMonitoringService.logPaymentSuccess(userId, orderId, 
+                    order.getPaymentMethod().name(), null);
+            } catch (Exception e) {
+                log.error("Failed to log payment success to monitoring", e);
+            }
+            
             try {
                 // [LOGIC MỚI] Lấy user để tính điểm theo tier multiplier
                 User user = order.getUser();

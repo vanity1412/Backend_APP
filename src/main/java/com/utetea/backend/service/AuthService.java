@@ -133,6 +133,11 @@ public class AuthService {
         // 🛡️ Ghi log đăng nhập thành công
         try {
             userMonitoringService.logLoginSuccess(user.getId(), httpRequest);
+            
+            // 🚨 Check thiết bị/IP mới
+            if (httpRequest != null) {
+                checkNewDeviceLogin(user.getId(), httpRequest);
+            }
         } catch (Exception ex) {
             log.error("Failed to log login success to monitoring", ex);
         }
@@ -458,5 +463,56 @@ public class AuthService {
         log.debug("==========================================");
 
         return response;
+    }
+    
+    /**
+     * 🚨 Check đăng nhập từ thiết bị/IP mới
+     */
+    private void checkNewDeviceLogin(Long userId, HttpServletRequest request) {
+        try {
+            String currentIp = getClientIp(request);
+            String currentDevice = getDeviceInfo(request);
+            
+            // Lấy IP và device từ lần đăng nhập gần nhất
+            // Nếu khác với lần trước -> cảnh báo
+            // (Đơn giản hóa: chỉ check IP)
+            if (currentIp != null && !currentIp.isEmpty()) {
+                // Có thể mở rộng: lưu danh sách IP đã dùng của user
+                // Hiện tại chỉ log để admin theo dõi
+                log.info("User {} logged in from IP: {}, Device: {}", userId, currentIp, currentDevice);
+            }
+        } catch (Exception e) {
+            log.error("Error checking new device login", e);
+        }
+    }
+    
+    private String getClientIp(HttpServletRequest request) {
+        if (request == null) return null;
+        
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Real-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        return ip;
+    }
+    
+    private String getDeviceInfo(HttpServletRequest request) {
+        if (request == null) return null;
+        
+        String userAgent = request.getHeader("User-Agent");
+        if (userAgent == null) return "Unknown";
+        
+        if (userAgent.contains("Android")) return "Android";
+        if (userAgent.contains("iPhone") || userAgent.contains("iPad")) return "iOS";
+        if (userAgent.contains("Windows")) return "Windows";
+        if (userAgent.contains("Mac")) return "macOS";
+        if (userAgent.contains("Linux")) return "Linux";
+        return "Unknown";
     }
 }
