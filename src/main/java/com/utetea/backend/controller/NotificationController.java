@@ -168,7 +168,17 @@ public class NotificationController {
         dto.setType(notification.getType());
         dto.setRelatedId(notification.getRelatedId());
         dto.setIsRead(notification.getIsRead());
-        dto.setCreatedAt(notification.getCreatedAt());
+        
+        // Convert Instant to LocalDateTime
+        if (notification.getCreatedAt() != null) {
+            dto.setCreatedAt(
+                java.time.LocalDateTime.ofInstant(
+                    notification.getCreatedAt(), 
+                    java.time.ZoneId.systemDefault()
+                )
+            );
+        }
+        
         return dto;
     }
 }
