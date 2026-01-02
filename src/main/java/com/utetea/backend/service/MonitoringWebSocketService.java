@@ -91,8 +91,8 @@ public class MonitoringWebSocketService {
             
             // Tạo alert message đặc biệt
             MonitoringAlertDto blockAlert = new MonitoringAlertDto();
-            blockAlert.setAlertType("AUTO_BLOCKED");
-            blockAlert.setSeverity("CRITICAL");
+            blockAlert.setAlertType(com.utetea.backend.model.MonitoringAlert.AlertType.AUTO_BLOCKED);
+            blockAlert.setSeverity(com.utetea.backend.model.MonitoringAlert.AlertSeverity.CRITICAL);
             blockAlert.setTitle("🚨 User tự động bị khóa");
             blockAlert.setMessage("User " + riskScore.getUsername() + 
                 " đã bị tự động khóa do điểm rủi ro " + riskScore.getTotalScore() + "/100");
