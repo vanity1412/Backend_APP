@@ -92,13 +92,7 @@ public class CartService {
             String title = "✅ Đã thêm vào giỏ hàng";
             String content = drink.getName() + " x" + request.getQuantity() + " - " + totalPrice + "đ";
             
-            java.util.Map<String, Object> data = new java.util.HashMap<>();
-            data.put("type", "CART_ITEM_ADDED");
-            data.put("drinkId", drink.getId());
-            data.put("drinkName", drink.getName());
-            data.put("quantity", request.getQuantity());
-            
-            oneSignalService.sendToUser(userId, title, content, data);
+            oneSignalService.sendToUser(String.valueOf(userId), title, content, NotificationType.SYSTEM, drink.getId());
         } catch (Exception e) {
             log.error("Failed to send cart notification", e);
         }

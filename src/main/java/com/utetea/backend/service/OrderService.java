@@ -351,21 +351,17 @@ public class OrderService {
             if (managers.isEmpty()) return;
 
             // Lấy danh sách ID
-            List<Long> managerIds = managers.stream()
-                    .map(User::getId)
-                    .collect(Collectors.toList());
+            String[] managerIds = managers.stream()
+                    .map(user -> String.valueOf(user.getId()))
+                    .toArray(String[]::new);
 
             String title = "🔔 Đơn hàng mới #" + order.getId();
             String content = "Khách hàng " + order.getUser().getFullName() +
                     " vừa đặt đơn trị giá " + order.getFinalPrice() + "đ.";
 
             // Gửi push notification
-            java.util.Map<String, Object> data = new java.util.HashMap<>();
-            data.put("type", "ORDER_NEW");
-            data.put("orderId", order.getId());
-            
-            oneSignalService.sendToUsers(managerIds, title, content, data);
-            log.info("Sent push notification to {} managers", managerIds.size());
+            oneSignalService.sendToMultipleUsers(managerIds, title, content, NotificationType.ORDER_NEW, order.getId());
+            log.info("Sent push notification to {} managers", managerIds.length);
 
         } catch (Exception e) {
             log.error("Failed to send push notification to managers", e);
@@ -377,7 +373,7 @@ public class OrderService {
      */
     private void sendNotificationToUser(Order order, OrderStatus status) {
         try {
-            Long userId = order.getUser().getId();
+            String userId = String.valueOf(order.getUser().getId());
             String title = "Cập nhật đơn hàng #" + order.getId();
             String content = "";
 
@@ -403,12 +399,7 @@ public class OrderService {
             }
 
             // Gửi push notification
-            java.util.Map<String, Object> data = new java.util.HashMap<>();
-            data.put("type", "ORDER_STATUS");
-            data.put("orderId", order.getId());
-            data.put("status", status.toString());
-            
-            oneSignalService.sendToUser(userId, title, content, data);
+            oneSignalService.sendToUser(userId, title, content, NotificationType.ORDER_STATUS, order.getId());
             log.info("Sent push notification to user {}", userId);
 
         } catch (Exception e) {

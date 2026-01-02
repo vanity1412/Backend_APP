@@ -7,6 +7,7 @@ import com.utetea.backend.exception.BusinessException;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.mapper.PromotionMapper;
 import com.utetea.backend.model.DiscountType;
+import com.utetea.backend.model.NotificationType;
 import com.utetea.backend.model.Promotion;
 import com.utetea.backend.repository.PromotionRepository;
 import lombok.RequiredArgsConstructor;
@@ -147,12 +148,7 @@ public class PromotionService {
                 String title = "🎉 Voucher mới dành cho bạn!";
                 String content = promotion.getDescription() + " - Mã: " + promotion.getCode();
                 
-                java.util.Map<String, Object> data = new java.util.HashMap<>();
-                data.put("type", "NEW_VOUCHER");
-                data.put("voucherCode", promotion.getCode());
-                data.put("promotionId", promotion.getId());
-                
-                oneSignalService.sendToAll(title, content, data);
+                oneSignalService.sendToAll(title, content, NotificationType.PROMOTION, promotion.getId());
                 log.info("Sent new voucher notification to all users");
             }
         } catch (Exception e) {
