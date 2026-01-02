@@ -7,8 +7,10 @@ import com.utetea.backend.model.User;
 import com.utetea.backend.model.UserRole;
 import com.utetea.backend.repository.UserRepository;
 import com.utetea.backend.security.JwtUtil;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -16,6 +18,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Collections;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +35,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final UserDetailsService userDetailsService;
     private final OtpService otpService;
+    private final UserMonitoringService userMonitoringService;
 
 //    @Transactional
 //    public LoginResponse register(RegisterRequest request) {
@@ -78,13 +83,35 @@ public class AuthService {
         log.debug("========== LOGIN SERVICE START ==========");
         log.debug("Login attempt for: {}", request.getUsernameOrPhone());
 
-        // Authenticate with Spring Security
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getUsernameOrPhone(),
-                        request.getPassword()
-                )
-        );
+        // Lấy HttpServletRequest để ghi log
+        HttpServletRequest httpRequest = null;
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs != null) {
+                httpRequest = attrs.getRequest();
+            }
+        } catch (Exception e) {
+            log.warn("Could not get HttpServletRequest for monitoring");
+        }
+
+        try {
+            // Authenticate with Spring Security
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            request.getUsernameOrPhone(),
+                            request.getPassword()
+                    )
+            );
+        } catch (BadCredentialsException e) {
+            // 🛡️ Ghi log đăng nhập thất bại
+            log.warn("Login failed for: {}", request.getUsernameOrPhone());
+            try {
+                userMonitoringService.logLoginFailed(request.getUsernameOrPhone(), httpRequest);
+            } catch (Exception ex) {
+                log.error("Failed to log login failure to monitoring", ex);
+            }
+            throw new BusinessException("Invalid credentials");
+        }
 
         User user = userRepository.findByUsernameOrPhone(
                 request.getUsernameOrPhone(),
@@ -101,6 +128,13 @@ public class AuthService {
 
         if (!user.getActive()) {
             throw new BusinessException("Account is inactive");
+        }
+
+        // 🛡️ Ghi log đăng nhập thành công
+        try {
+            userMonitoringService.logLoginSuccess(user.getId(), httpRequest);
+        } catch (Exception ex) {
+            log.error("Failed to log login success to monitoring", ex);
         }
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());

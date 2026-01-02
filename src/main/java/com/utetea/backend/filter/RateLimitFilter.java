@@ -1,6 +1,7 @@
 package com.utetea.backend.filter;
 
 import com.utetea.backend.config.RateLimitConfig;
+import com.utetea.backend.service.UserMonitoringService;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
 import jakarta.servlet.FilterChain;
@@ -24,6 +25,7 @@ import java.io.IOException;
 public class RateLimitFilter extends OncePerRequestFilter {
     
     private final RateLimitConfig rateLimitConfig;
+    private final UserMonitoringService userMonitoringService;
     
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
@@ -59,6 +61,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
             response.getWriter().write("{\"error\":\"Too many requests\",\"message\":\"Rate limit exceeded. Please try again in " + waitForRefill + " seconds.\"}");
             
             log.warn("Rate limit exceeded for IP: {} on endpoint: {}", clientIp, requestUri);
+            
+            // 🛡️ Ghi log vào hệ thống giám sát
+            try {
+                userMonitoringService.logRateLimitHit(null, requestUri, request);
+            } catch (Exception e) {
+                log.error("Failed to log rate limit hit to monitoring", e);
+            }
         }
     }
     
