@@ -9,7 +9,10 @@ import com.utetea.backend.mapper.PromotionMapper;
 import com.utetea.backend.model.DiscountType;
 import com.utetea.backend.model.NotificationType;
 import com.utetea.backend.model.Promotion;
+import com.utetea.backend.model.User;
 import com.utetea.backend.repository.PromotionRepository;
+import com.utetea.backend.repository.PromotionUsageRepository;
+import com.utetea.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,6 +31,8 @@ public class PromotionService {
     private final PromotionRepository promotionRepository;
     private final PromotionMapper promotionMapper;
     private final OneSignalService oneSignalService;
+    private final PromotionUsageRepository promotionUsageRepository;
+    private final UserRepository userRepository;
     
     // ========== USER APIs ==========
     
@@ -53,14 +58,8 @@ public class PromotionService {
         Promotion promotion = promotionRepository.findByCodeAndIsActiveTrue(code)
                 .orElseThrow(() -> new BusinessException("Invalid promotion code: " + code));
         
-        LocalDateTime now = LocalDateTime.now();
-        if (now.isBefore(promotion.getStartDate())) {
-            throw new BusinessException("Promotion has not started yet");
-        }
-        
-        if (now.isAfter(promotion.getEndDate())) {
-            throw new BusinessException("Promotion has expired");
-        }
+        // ✅ SECURITY: Validate voucher
+        validatePromotion(promotion, null, null);
         
         log.info("Promotion code {} is valid", code);
         return promotionMapper.toDto(promotion);
@@ -73,23 +72,81 @@ public class PromotionService {
         Promotion promotion = promotionRepository.findByCodeAndIsActiveTrue(code)
                 .orElseThrow(() -> new BusinessException("Invalid promotion code: " + code));
         
-        LocalDateTime now = LocalDateTime.now();
-        if (now.isBefore(promotion.getStartDate())) {
-            throw new BusinessException("Promotion has not started yet");
-        }
-        
-        if (now.isAfter(promotion.getEndDate())) {
-            throw new BusinessException("Promotion has expired");
-        }
-        
-        if (orderAmount.compareTo(promotion.getMinOrderValue()) < 0) {
-            throw new BusinessException(String.format(
-                    "Minimum order amount is %s VND for this promotion", 
-                    promotion.getMinOrderValue()));
-        }
+        // ✅ SECURITY: Validate voucher với amount
+        validatePromotion(promotion, orderAmount, null);
         
         log.info("Promotion code {} is valid for order amount {}", code, orderAmount);
         return promotionMapper.toDto(promotion);
+    }
+    
+    /**
+     * ✅ SECURITY: Validate voucher với user (check đã dùng chưa)
+     */
+    @Transactional(readOnly = true)
+    public PromotionDto validatePromotionForUser(String code, String username, java.math.BigDecimal orderAmount) {
+        log.info("Validating promotion code: {} for user: {} with amount: {}", code, username, orderAmount);
+        
+        Promotion promotion = promotionRepository.findByCodeAndIsActiveTrue(code)
+                .orElseThrow(() -> new BusinessException("Mã voucher không hợp lệ"));
+        
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
+        
+        // ✅ SECURITY: Validate voucher đầy đủ
+        validatePromotion(promotion, orderAmount, user.getId());
+        
+        log.info("Promotion code {} is valid for user {}", code, username);
+        return promotionMapper.toDto(promotion);
+    }
+    
+    /**
+     * ✅ SECURITY: VALIDATE PROMOTION - CORE METHOD
+     */
+    private void validatePromotion(Promotion promotion, java.math.BigDecimal orderAmount, Long userId) {
+        LocalDateTime now = LocalDateTime.now();
+        
+        // 1. Check active
+        if (!promotion.getIsActive()) {
+            throw new BusinessException("Mã voucher đã bị vô hiệu hóa");
+        }
+        
+        // 2. Check thời gian
+        if (now.isBefore(promotion.getStartDate())) {
+            throw new BusinessException("Mã voucher chưa có hiệu lực");
+        }
+        
+        if (now.isAfter(promotion.getEndDate())) {
+            throw new com.utetea.backend.exception.VoucherExpiredException(
+                "Mã voucher đã hết hạn vào " + promotion.getEndDate()
+            );
+        }
+        
+        // 3. Check usage limit (tổng số lần dùng)
+        if (promotion.getUsageLimit() != null && 
+            promotion.getUsedCount() >= promotion.getUsageLimit()) {
+            throw new BusinessException("Mã voucher đã hết lượt sử dụng");
+        }
+        
+        // 4. ✅ SECURITY: Check user đã dùng voucher này chưa
+        if (userId != null) {
+            boolean hasUsed = promotionUsageRepository.existsByPromotionIdAndUserId(
+                promotion.getId(), userId
+            );
+            
+            if (hasUsed) {
+                throw new com.utetea.backend.exception.VoucherAlreadyUsedException(
+                    "Bạn đã sử dụng mã voucher này rồi"
+                );
+            }
+        }
+        
+        // 5. Check minimum order value
+        if (orderAmount != null && orderAmount.compareTo(promotion.getMinOrderValue()) < 0) {
+            throw new BusinessException(String.format(
+                "Giá trị đơn hàng tối thiểu là %s VND cho mã voucher này", 
+                promotion.getMinOrderValue()
+            ));
+        }
     }
     
     // ========== MANAGER APIs ==========

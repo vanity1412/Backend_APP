@@ -20,6 +20,7 @@ public class LoyaltyService {
     
     private final UserRepository userRepository;
     private final SpinRewardRepository spinRewardRepository;
+    private final RateLimitService rateLimitService;
     
     @Value("${loyalty.points-to-spin:5}")
     private int pointsToSpin;
@@ -67,11 +68,15 @@ public class LoyaltyService {
     
     /**
      * Quay vòng xoay may mắn
+     * ✅ SECURITY: Check rate limit trước khi quay
      */
     @Transactional
     public SpinWheelResponse spinWheel(String username) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        
+        // ✅ SECURITY: Check rate limit (10 lần/ngày per user)
+        rateLimitService.checkSpinRateLimit(user.getId());
         
         if (user.getPoints() < pointsToSpin) {
             throw new BadRequestException("Không đủ điểm để quay. Cần " + pointsToSpin + " điểm.");

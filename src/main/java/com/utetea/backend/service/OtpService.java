@@ -22,6 +22,7 @@ public class OtpService {
     private final JavaMailSender mailSender;
     private final UserRepository userRepository;
     private final SendGridEmailService sendGridEmailService;
+    private final RateLimitService rateLimitService;
     
     private static final long OTP_VALIDITY_MINUTES = 5;
     private static final SecureRandom secureRandom = new SecureRandom();
@@ -37,9 +38,13 @@ public class OtpService {
     /**
      * Send OTP via email - tries SendGrid first, then falls back to SMTP
      * Runs asynchronously to prevent request timeout
+     * ✅ SECURITY: Check rate limit trước khi gửi
      */
     @Async
     public void sendOtp(String otp, String email) {
+        // ✅ SECURITY: Check rate limit (5 lần/giờ per email)
+        rateLimitService.checkOtpRateLimit(email);
+        
         log.info("Preparing to send OTP email to: {}", email);
         
         String subject = "[UTE Tea] Mã OTP xác thực tài khoản";

@@ -39,10 +39,14 @@ public class OrderService {
     private final OrderWebSocketService orderWebSocketService;
     private final OneSignalService oneSignalService;
     private final MemberTierService memberTierService;
+    private final RateLimitService rateLimitService;
 
     @Transactional
     public OrderDto createOrder(String username, OrderRequest request) {
         log.info("Creating order for user: {}, store: {}", username, request.getStoreId());
+
+        // ✅ SECURITY: VALIDATE REQUEST TRƯỚC KHI XỬ LÝ
+        validateOrderRequest(request);
 
         // Validate user
         User user = userRepository.findByUsername(username)
@@ -51,6 +55,9 @@ public class OrderService {
         if (!user.getActive()) {
             throw new BusinessException("User account is inactive", HttpStatus.FORBIDDEN);
         }
+        
+        // ✅ SECURITY: Check rate limit (20 đơn/giờ per user)
+        rateLimitService.checkOrderRateLimit(user.getId());
 
         // Validate store
         Store store = storeRepository.findById(request.getStoreId())
@@ -482,5 +489,95 @@ public class OrderService {
         dto.setToppings(toppingDtos);
 
         return dto;
+    }
+    
+    /**
+     * ✅ SECURITY: VALIDATE ORDER REQUEST
+     * Kiểm tra tất cả input từ client để prevent abuse
+     */
+    private void validateOrderRequest(OrderRequest request) {
+        // Import ValidationConstants
+        final int MAX_ITEMS = com.utetea.backend.util.ValidationConstants.MAX_ITEMS_PER_ORDER;
+        final int MAX_QTY = com.utetea.backend.util.ValidationConstants.MAX_QUANTITY_PER_ITEM;
+        final int MIN_QTY = com.utetea.backend.util.ValidationConstants.MIN_QUANTITY;
+        
+        // 1. Validate số lượng items
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new BusinessException("Đơn hàng phải có ít nhất 1 sản phẩm");
+        }
+        
+        if (request.getItems().size() > MAX_ITEMS) {
+            throw new BusinessException(
+                String.format("Số lượng sản phẩm tối đa là %d. Bạn đang đặt %d sản phẩm", 
+                    MAX_ITEMS, request.getItems().size())
+            );
+        }
+        
+        // 2. Validate từng item
+        for (OrderItemRequest item : request.getItems()) {
+            // Validate quantity
+            if (item.getQuantity() == null || item.getQuantity() < MIN_QTY) {
+                throw new com.utetea.backend.exception.InvalidQuantityException(
+                    "Số lượng phải lớn hơn " + MIN_QTY
+                );
+            }
+            
+            if (item.getQuantity() > MAX_QTY) {
+                throw new com.utetea.backend.exception.InvalidQuantityException(
+                    item.getQuantity(), MIN_QTY, MAX_QTY
+                );
+            }
+            
+            // Validate drinkId
+            if (item.getDrinkId() == null || item.getDrinkId() <= 0) {
+                throw new BusinessException("DrinkId không hợp lệ");
+            }
+            
+            // Validate sizeName
+            if (item.getSizeName() == null || item.getSizeName().trim().isEmpty()) {
+                throw new BusinessException("Size không được để trống");
+            }
+            
+            // Validate toppingIds (nếu có)
+            if (item.getToppingIds() != null) {
+                if (item.getToppingIds().size() > 10) {
+                    throw new BusinessException("Số lượng topping tối đa là 10");
+                }
+                
+                for (Long toppingId : item.getToppingIds()) {
+                    if (toppingId == null || toppingId <= 0) {
+                        throw new BusinessException("ToppingId không hợp lệ");
+                    }
+                }
+            }
+        }
+        
+        // 3. Validate storeId
+        if (request.getStoreId() == null || request.getStoreId() <= 0) {
+            throw new BusinessException("StoreId không hợp lệ");
+        }
+        
+        // 4. Validate orderType
+        if (request.getType() == null) {
+            throw new BusinessException("Loại đơn hàng không được để trống");
+        }
+        
+        // 5. Validate address nếu là DELIVERY
+        if (request.getType() == OrderType.DELIVERY) {
+            if (request.getAddress() == null || request.getAddress().trim().isEmpty()) {
+                throw new BusinessException("Địa chỉ giao hàng không được để trống");
+            }
+            
+            if (request.getAddress().length() > 500) {
+                throw new BusinessException("Địa chỉ giao hàng quá dài (tối đa 500 ký tự)");
+            }
+        }
+        
+        // 6. Validate paymentMethod (PaymentMethod là enum)
+        if (request.getPaymentMethod() == null) {
+            throw new BusinessException("Phương thức thanh toán không được để trống");
+        }
+        
+        log.info("✅ Order request validation passed");
     }
 }
