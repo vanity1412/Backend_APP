@@ -1,84 +1,96 @@
 package com.utetea.backend.model;
 
-import com.utetea.backend.model.base.AuditEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
- * 🚫 BLOCKED IP - Danh sách IP bị chặn
- * Admin có thể block IP khi phát hiện hành vi đáng ngờ
+ * 🚫 Entity lưu trữ thông tin IP bị chặn
  */
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-@Entity @Table(name = "blocked_ips", indexes = {
-    @Index(name = "idx_blocked_ip", columnList = "ip_address"),
-    @Index(name = "idx_blocked_ip_active", columnList = "is_active")
-})
-public class BlockedIP extends AuditEntity {
+@Entity
+@Table(name = "blocked_ips")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class BlockedIP {
 
-    @Column(name = "ip_address", nullable = false, length = 45)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "ip_address", nullable = false)
     private String ipAddress;
 
-    @Column(nullable = false, length = 50)
     @Enumerated(EnumType.STRING)
+    @Column(name = "block_type", nullable = false)
     private BlockType blockType;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    @Column(name = "reason")
     private String reason;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "blocked_by")
-    private User blockedBy; // Admin/Manager đã block
+    @Column(name = "blocked_by_id")
+    private Long blockedById;
 
     @Column(name = "blocked_until")
-    private LocalDateTime blockedUntil; // null = vĩnh viễn
+    private Instant blockedUntil;
 
-    @Column(name = "is_active", nullable = false)
+    @Column(name = "is_active")
     private Boolean isActive = true;
 
     @Column(name = "unblocked_at")
-    private LocalDateTime unblockedAt;
+    private Instant unblockedAt;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "unblocked_by")
-    private User unblockedBy;
+    @Column(name = "unblocked_by_id")
+    private Long unblockedById;
 
     @Column(name = "unblock_reason")
     private String unblockReason;
 
-    // Liên kết với alert (nếu block từ alert)
     @Column(name = "alert_id")
     private Long alertId;
 
-    // Liên kết với user (nếu biết user nào dùng IP này)
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "related_user_id")
-    private User relatedUser;
+    @Column(name = "related_user_id")
+    private Long relatedUserId;
 
-    // Số lần request bị chặn từ IP này
     @Column(name = "blocked_requests_count")
     private Long blockedRequestsCount = 0L;
 
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private Instant createdAt;
+
     public enum BlockType {
-        TEMPORARY,  // Tạm thời (có blockedUntil)
-        PERMANENT,  // Vĩnh viễn
-        AUTO        // Tự động block bởi hệ thống
+        TEMPORARY,
+        PERMANENT,
+        AUTO
     }
 
     /**
-     * Kiểm tra IP có đang bị block không
+     * Kiểm tra IP có đang bị chặn không
      */
     public boolean isCurrentlyBlocked() {
-        if (!isActive) return false;
-        if (blockedUntil == null) return true; // Vĩnh viễn
-        return LocalDateTime.now().isBefore(blockedUntil);
+        if (!Boolean.TRUE.equals(isActive)) {
+            return false;
+        }
+        if (blockType == BlockType.PERMANENT) {
+            return true;
+        }
+        if (blockedUntil != null && blockedUntil.isBefore(Instant.now())) {
+            return false;
+        }
+        return true;
     }
 
     /**
-     * Tăng số lần request bị chặn
+     * Tăng số lượng request bị chặn
      */
     public void incrementBlockedCount() {
-        this.blockedRequestsCount = (this.blockedRequestsCount == null ? 0 : this.blockedRequestsCount) + 1;
+        if (blockedRequestsCount == null) {
+            blockedRequestsCount = 0L;
+        }
+        blockedRequestsCount++;
     }
 }

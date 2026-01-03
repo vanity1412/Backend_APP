@@ -8,66 +8,65 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * 🚫 Repository cho BlockedIP
+ */
 @Repository
 public interface BlockedIPRepository extends JpaRepository<BlockedIP, Long> {
 
     /**
-     * Tìm IP đang bị block (active và chưa hết hạn)
+     * Tìm IP đang bị chặn (active và chưa hết hạn)
+     * Bao gồm: PERMANENT, AUTO (vĩnh viễn), TEMPORARY (còn hạn)
      */
     @Query("SELECT b FROM BlockedIP b WHERE b.ipAddress = :ip AND b.isActive = true " +
-           "AND (b.blockedUntil IS NULL OR b.blockedUntil > :now)")
-    Optional<BlockedIP> findActiveBlockedIP(@Param("ip") String ipAddress, @Param("now") LocalDateTime now);
+           "AND (b.blockType = 'PERMANENT' OR b.blockType = 'AUTO' OR (b.blockType = 'TEMPORARY' AND b.blockedUntil > :now))")
+    Optional<BlockedIP> findActiveBlockedIP(@Param("ip") String ip, @Param("now") Instant now);
 
     /**
-     * Kiểm tra IP có đang bị block không
+     * Kiểm tra IP có đang bị chặn không
      */
     @Query("SELECT COUNT(b) > 0 FROM BlockedIP b WHERE b.ipAddress = :ip AND b.isActive = true " +
-           "AND (b.blockedUntil IS NULL OR b.blockedUntil > :now)")
-    boolean isIPBlocked(@Param("ip") String ipAddress, @Param("now") LocalDateTime now);
+           "AND (b.blockType = 'PERMANENT' OR b.blockType = 'AUTO' OR (b.blockType = 'TEMPORARY' AND b.blockedUntil > :now))")
+    boolean isIPBlocked(@Param("ip") String ip, @Param("now") Instant now);
 
     /**
-     * Lấy tất cả IP đang bị block
+     * Lấy danh sách IP đang bị chặn
      */
     @Query("SELECT b FROM BlockedIP b WHERE b.isActive = true " +
-           "AND (b.blockedUntil IS NULL OR b.blockedUntil > :now) " +
+           "AND (b.blockType = 'PERMANENT' OR b.blockType = 'AUTO' OR (b.blockType = 'TEMPORARY' AND b.blockedUntil > :now)) " +
            "ORDER BY b.createdAt DESC")
-    List<BlockedIP> findAllActiveBlocked(@Param("now") LocalDateTime now);
+    Page<BlockedIP> findActiveBlockedIPs(@Param("now") Instant now, Pageable pageable);
 
     /**
-     * Lấy danh sách IP bị block (có phân trang)
-     */
-    Page<BlockedIP> findByIsActiveTrueOrderByCreatedAtDesc(Pageable pageable);
-
-    /**
-     * Lấy tất cả (bao gồm đã unblock)
+     * Lấy tất cả blocked IPs (bao gồm đã gỡ)
      */
     Page<BlockedIP> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     /**
-     * Tìm theo IP
+     * Tìm theo IP address
      */
-    List<BlockedIP> findByIpAddressOrderByCreatedAtDesc(String ipAddress);
+    List<BlockedIP> findByIpAddressContainingIgnoreCaseOrderByCreatedAtDesc(String ip);
 
     /**
-     * Tìm IP block liên quan đến user
+     * Tìm theo user liên quan
      */
     List<BlockedIP> findByRelatedUserIdOrderByCreatedAtDesc(Long userId);
 
     /**
-     * Đếm số IP đang bị block
+     * Đếm số IP đang bị chặn
      */
     @Query("SELECT COUNT(b) FROM BlockedIP b WHERE b.isActive = true " +
-           "AND (b.blockedUntil IS NULL OR b.blockedUntil > :now)")
-    long countActiveBlocked(@Param("now") LocalDateTime now);
+           "AND (b.blockType = 'PERMANENT' OR b.blockType = 'AUTO' OR (b.blockType = 'TEMPORARY' AND b.blockedUntil > :now))")
+    long countActiveBlockedIPs(@Param("now") Instant now);
 
     /**
-     * Lấy các IP hết hạn block (để cleanup)
+     * Lấy các IP hết hạn cần cập nhật
      */
     @Query("SELECT b FROM BlockedIP b WHERE b.isActive = true " +
-           "AND b.blockedUntil IS NOT NULL AND b.blockedUntil <= :now")
-    List<BlockedIP> findExpiredBlocks(@Param("now") LocalDateTime now);
+           "AND b.blockType = 'TEMPORARY' AND b.blockedUntil <= :now")
+    List<BlockedIP> findExpiredBlocks(@Param("now") Instant now);
 }

@@ -1,10 +1,8 @@
 package com.utetea.backend.service;
 
+import com.utetea.backend.dto.BlockIPRequest;
 import com.utetea.backend.dto.BlockedIPDto;
-import com.utetea.backend.exception.BusinessException;
-import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.BlockedIP;
-import com.utetea.backend.model.BlockedIP.BlockType;
 import com.utetea.backend.model.User;
 import com.utetea.backend.repository.BlockedIPRepository;
 import com.utetea.backend.repository.UserRepository;
@@ -13,21 +11,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+import java.util.Optional;
 
 /**
- * 🚫 BLOCKED IP SERVICE
- * Quản lý danh sách IP bị chặn
- * Sử dụng cache in-memory để tối ưu performance
+ * 🚫 Service quản lý Blocked IP
  */
 @Service
 @RequiredArgsConstructor
@@ -37,243 +32,175 @@ public class BlockedIPService {
     private final BlockedIPRepository blockedIPRepository;
     private final UserRepository userRepository;
 
-    // 🚀 Cache IP bị block để check nhanh (không cần query DB mỗi request)
-    private final Set<String> blockedIPCache = ConcurrentHashMap.newKeySet();
-    private volatile boolean cacheInitialized = false;
-
-    /**
-     * Khởi tạo cache khi service start
-     */
-    @jakarta.annotation.PostConstruct
-    public void initCache() {
-        refreshCache();
-    }
-
-    /**
-     * Refresh cache từ database
-     */
-    public void refreshCache() {
-        try {
-            List<BlockedIP> activeBlocked = blockedIPRepository.findAllActiveBlocked(LocalDateTime.now());
-            blockedIPCache.clear();
-            blockedIPCache.addAll(activeBlocked.stream()
-                .map(BlockedIP::getIpAddress)
-                .collect(Collectors.toSet()));
-            cacheInitialized = true;
-            log.info("Blocked IP cache refreshed. {} IPs blocked", blockedIPCache.size());
-        } catch (Exception e) {
-            log.error("Failed to refresh blocked IP cache", e);
-        }
-    }
-
-    /**
-     * 🚀 Check nhanh IP có bị block không (dùng cache)
-     */
-    public boolean isIPBlocked(String ipAddress) {
-        if (!cacheInitialized) {
-            refreshCache();
-        }
-        return blockedIPCache.contains(ipAddress);
-    }
-
-    /**
-     * Check IP và tăng counter nếu bị block
-     */
-    @Transactional
-    public boolean checkAndIncrementIfBlocked(String ipAddress) {
-        if (!isIPBlocked(ipAddress)) {
-            return false;
-        }
-        
-        // Tăng counter trong DB (async để không block request)
-        try {
-            blockedIPRepository.findActiveBlockedIP(ipAddress, LocalDateTime.now())
-                .ifPresent(blocked -> {
-                    blocked.incrementBlockedCount();
-                    blockedIPRepository.save(blocked);
-                });
-        } catch (Exception e) {
-            log.error("Failed to increment blocked count for IP: {}", ipAddress, e);
-        }
-        
-        return true;
-    }
-
     /**
      * 🚫 Block một IP
      */
     @Transactional
-    public BlockedIPDto blockIP(String ipAddress, BlockType blockType, String reason, 
-                                 Integer durationHours, Long relatedUserId, Long alertId) {
-        log.info("Blocking IP: {} - Type: {} - Reason: {}", ipAddress, blockType, reason);
+    public BlockedIP blockIP(BlockIPRequest request, Long blockedById) {
+        log.info("🚫 Blocking IP: {} by user: {}", request.getIpAddress(), blockedById);
         
-        // Validate IP format (basic)
-        if (ipAddress == null || ipAddress.trim().isEmpty()) {
-            throw new BusinessException("IP address is required");
+        // Kiểm tra IP đã bị block chưa
+        Optional<BlockedIP> existing = blockedIPRepository.findActiveBlockedIP(
+            request.getIpAddress(), Instant.now());
+        
+        if (existing.isPresent()) {
+            log.warn("IP {} is already blocked", request.getIpAddress());
+            throw new RuntimeException("IP này đã bị chặn");
         }
         
-        // Check nếu IP đã bị block
-        if (isIPBlocked(ipAddress)) {
-            throw new BusinessException("IP " + ipAddress + " đã bị block");
+        BlockedIP.BlockType blockType = BlockedIP.BlockType.valueOf(request.getBlockType());
+        
+        Instant blockedUntil = null;
+        if (blockType == BlockedIP.BlockType.TEMPORARY && request.getDurationHours() != null) {
+            blockedUntil = Instant.now().plus(request.getDurationHours(), ChronoUnit.HOURS);
         }
         
-        User currentUser = getCurrentUser();
-        User relatedUser = null;
-        if (relatedUserId != null) {
-            relatedUser = userRepository.findById(relatedUserId).orElse(null);
-        }
+        BlockedIP blockedIP = BlockedIP.builder()
+                .ipAddress(request.getIpAddress())
+                .blockType(blockType)
+                .reason(request.getReason())
+                .blockedById(blockedById)
+                .blockedUntil(blockedUntil)
+                .isActive(true)
+                .relatedUserId(request.getRelatedUserId())
+                .alertId(request.getAlertId())
+                .blockedRequestsCount(0L)
+                .build();
         
-        LocalDateTime blockedUntil = null;
-        if (blockType == BlockType.TEMPORARY && durationHours != null && durationHours > 0) {
-            blockedUntil = LocalDateTime.now().plusHours(durationHours);
-        }
-        
-        BlockedIP blocked = BlockedIP.builder()
-            .ipAddress(ipAddress.trim())
-            .blockType(blockType)
-            .reason(reason)
-            .blockedBy(currentUser)
-            .blockedUntil(blockedUntil)
-            .isActive(true)
-            .alertId(alertId)
-            .relatedUser(relatedUser)
-            .blockedRequestsCount(0L)
-            .build();
-        
-        blocked = blockedIPRepository.save(blocked);
-        
-        // Update cache
-        blockedIPCache.add(ipAddress.trim());
-        
-        log.info("IP {} blocked successfully. ID: {}", ipAddress, blocked.getId());
-        return BlockedIPDto.fromEntity(blocked);
+        return blockedIPRepository.save(blockedIP);
     }
 
     /**
-     * 🔓 Unblock một IP
+     * 🔓 Gỡ chặn IP
      */
     @Transactional
-    public BlockedIPDto unblockIP(Long blockedIPId, String reason) {
-        log.info("Unblocking IP ID: {} - Reason: {}", blockedIPId, reason);
+    public BlockedIP unblockIP(Long blockedIPId, Long unblockedById, String reason) {
+        log.info("🔓 Unblocking IP id: {} by user: {}", blockedIPId, unblockedById);
         
-        BlockedIP blocked = blockedIPRepository.findById(blockedIPId)
-            .orElseThrow(() -> new ResourceNotFoundException("Blocked IP not found: " + blockedIPId));
+        BlockedIP blockedIP = blockedIPRepository.findById(blockedIPId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy blocked IP"));
         
-        if (!blocked.getIsActive()) {
-            throw new BusinessException("IP này đã được unblock trước đó");
+        blockedIP.setIsActive(false);
+        blockedIP.setUnblockedAt(Instant.now());
+        blockedIP.setUnblockedById(unblockedById);
+        blockedIP.setUnblockReason(reason);
+        
+        return blockedIPRepository.save(blockedIP);
+    }
+
+    /**
+     * ✅ Kiểm tra IP có bị chặn không
+     */
+    public boolean isIPBlocked(String ipAddress) {
+        return blockedIPRepository.isIPBlocked(ipAddress, Instant.now());
+    }
+
+    /**
+     * ✅ Kiểm tra IP có bị chặn không và tăng counter nếu bị chặn
+     */
+    @Transactional
+    public boolean checkAndIncrementIfBlocked(String ipAddress) {
+        Optional<BlockedIP> blocked = blockedIPRepository.findActiveBlockedIP(ipAddress, Instant.now());
+        if (blocked.isPresent()) {
+            blocked.get().incrementBlockedCount();
+            blockedIPRepository.save(blocked.get());
+            return true;
         }
-        
-        User currentUser = getCurrentUser();
-        
-        blocked.setIsActive(false);
-        blocked.setUnblockedAt(LocalDateTime.now());
-        blocked.setUnblockedBy(currentUser);
-        blocked.setUnblockReason(reason);
-        
-        blocked = blockedIPRepository.save(blocked);
-        
-        // Update cache
-        blockedIPCache.remove(blocked.getIpAddress());
-        
-        log.info("IP {} unblocked successfully", blocked.getIpAddress());
-        return BlockedIPDto.fromEntity(blocked);
+        return false;
     }
 
     /**
-     * Lấy danh sách IP đang bị block
+     * 📊 Tăng số request bị chặn
      */
-    @Transactional(readOnly = true)
+    @Transactional
+    public void incrementBlockedCount(String ipAddress) {
+        blockedIPRepository.findActiveBlockedIP(ipAddress, Instant.now())
+                .ifPresent(blockedIP -> {
+                    blockedIP.incrementBlockedCount();
+                    blockedIPRepository.save(blockedIP);
+                });
+    }
+
+    /**
+     * 📋 Lấy danh sách IP đang bị chặn
+     */
     public Page<BlockedIPDto> getActiveBlockedIPs(Pageable pageable) {
-        return blockedIPRepository.findByIsActiveTrueOrderByCreatedAtDesc(pageable)
-            .map(BlockedIPDto::fromEntity);
+        return blockedIPRepository.findActiveBlockedIPs(Instant.now(), pageable)
+                .map(this::toDto);
     }
 
     /**
-     * Lấy tất cả lịch sử block IP
+     * 📋 Lấy tất cả blocked IPs
      */
-    @Transactional(readOnly = true)
     public Page<BlockedIPDto> getAllBlockedIPs(Pageable pageable) {
         return blockedIPRepository.findAllByOrderByCreatedAtDesc(pageable)
-            .map(BlockedIPDto::fromEntity);
+                .map(this::toDto);
     }
 
     /**
-     * Lấy thông tin chi tiết một blocked IP
+     * 🔍 Tìm kiếm theo IP
      */
-    @Transactional(readOnly = true)
-    public BlockedIPDto getBlockedIPById(Long id) {
-        return blockedIPRepository.findById(id)
-            .map(BlockedIPDto::fromEntity)
-            .orElseThrow(() -> new ResourceNotFoundException("Blocked IP not found: " + id));
+    public List<BlockedIPDto> searchByIP(String ip) {
+        return blockedIPRepository.findByIpAddressContainingIgnoreCaseOrderByCreatedAtDesc(ip)
+                .stream()
+                .map(this::toDto)
+                .toList();
     }
 
     /**
-     * Tìm kiếm theo IP
+     * 📊 Thống kê
      */
-    @Transactional(readOnly = true)
-    public List<BlockedIPDto> searchByIP(String ipAddress) {
-        return blockedIPRepository.findByIpAddressOrderByCreatedAtDesc(ipAddress)
-            .stream()
-            .map(BlockedIPDto::fromEntity)
-            .collect(Collectors.toList());
-    }
-
-    /**
-     * Lấy IP blocks liên quan đến user
-     */
-    @Transactional(readOnly = true)
-    public List<BlockedIPDto> getBlockedIPsByUser(Long userId) {
-        return blockedIPRepository.findByRelatedUserIdOrderByCreatedAtDesc(userId)
-            .stream()
-            .map(BlockedIPDto::fromEntity)
-            .collect(Collectors.toList());
-    }
-
-    /**
-     * Thống kê
-     */
-    @Transactional(readOnly = true)
     public Map<String, Object> getStatistics() {
-        long activeCount = blockedIPRepository.countActiveBlocked(LocalDateTime.now());
-        long totalCount = blockedIPRepository.count();
-        
-        return Map.of(
-            "activeBlockedIPs", activeCount,
-            "totalBlockedIPs", totalCount,
-            "cacheSize", blockedIPCache.size()
-        );
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalActive", blockedIPRepository.countActiveBlockedIPs(Instant.now()));
+        stats.put("total", blockedIPRepository.count());
+        return stats;
     }
 
     /**
-     * 🕐 Scheduled task: Cleanup expired blocks và refresh cache
-     * Chạy mỗi 5 phút
+     * 🔄 Tự động gỡ chặn các IP hết hạn (chạy mỗi phút)
      */
-    @Scheduled(fixedRate = 300000) // 5 phút
+    @Scheduled(fixedRate = 60000)
     @Transactional
     public void cleanupExpiredBlocks() {
-        try {
-            List<BlockedIP> expired = blockedIPRepository.findExpiredBlocks(LocalDateTime.now());
-            if (!expired.isEmpty()) {
-                for (BlockedIP blocked : expired) {
-                    blocked.setIsActive(false);
-                    blocked.setUnblockedAt(LocalDateTime.now());
-                    blocked.setUnblockReason("Tự động hết hạn");
-                    blockedIPRepository.save(blocked);
-                    blockedIPCache.remove(blocked.getIpAddress());
-                }
-                log.info("Cleaned up {} expired IP blocks", expired.size());
-            }
-        } catch (Exception e) {
-            log.error("Error cleaning up expired IP blocks", e);
+        List<BlockedIP> expired = blockedIPRepository.findExpiredBlocks(Instant.now());
+        if (!expired.isEmpty()) {
+            log.info("🔄 Auto-unblocking {} expired IPs", expired.size());
+            expired.forEach(ip -> {
+                ip.setIsActive(false);
+                ip.setUnblockedAt(Instant.now());
+                ip.setUnblockReason("Tự động gỡ - Hết hạn");
+            });
+            blockedIPRepository.saveAll(expired);
         }
     }
 
-    private User getCurrentUser() {
-        try {
-            String username = SecurityContextHolder.getContext().getAuthentication().getName();
-            return userRepository.findByUsername(username).orElse(null);
-        } catch (Exception e) {
-            return null;
+    /**
+     * Convert entity to DTO
+     */
+    private BlockedIPDto toDto(BlockedIP entity) {
+        String blockedByUsername = null;
+        String unblockedByUsername = null;
+        String relatedUsername = null;
+        
+        if (entity.getBlockedById() != null) {
+            blockedByUsername = userRepository.findById(entity.getBlockedById())
+                    .map(User::getUsername)
+                    .orElse(null);
         }
+        
+        if (entity.getUnblockedById() != null) {
+            unblockedByUsername = userRepository.findById(entity.getUnblockedById())
+                    .map(User::getUsername)
+                    .orElse(null);
+        }
+        
+        if (entity.getRelatedUserId() != null) {
+            relatedUsername = userRepository.findById(entity.getRelatedUserId())
+                    .map(User::getUsername)
+                    .orElse(null);
+        }
+        
+        return BlockedIPDto.fromEntity(entity, blockedByUsername, unblockedByUsername, relatedUsername);
     }
 }
