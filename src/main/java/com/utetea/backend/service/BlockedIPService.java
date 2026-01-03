@@ -37,26 +37,43 @@ public class BlockedIPService {
      */
     @Transactional
     public BlockedIP blockIP(BlockIPRequest request, Long blockedById) {
-        log.info("🚫 Blocking IP: {} by user: {}", request.getIpAddress(), blockedById);
+        log.info("🚫 Blocking IP: {} by user: {} | Type: {} | Duration: {}h", 
+            request.getIpAddress(), blockedById, request.getBlockType(), request.getDurationHours());
+        
+        // Validate IP address
+        if (request.getIpAddress() == null || request.getIpAddress().trim().isEmpty()) {
+            throw new RuntimeException("Địa chỉ IP không được để trống");
+        }
+        
+        String ipAddress = request.getIpAddress().trim();
         
         // Kiểm tra IP đã bị block chưa
-        Optional<BlockedIP> existing = blockedIPRepository.findActiveBlockedIP(
-            request.getIpAddress(), Instant.now());
+        Optional<BlockedIP> existing = blockedIPRepository.findActiveBlockedIP(ipAddress, Instant.now());
         
         if (existing.isPresent()) {
-            log.warn("IP {} is already blocked", request.getIpAddress());
+            log.warn("IP {} is already blocked (id: {})", ipAddress, existing.get().getId());
             throw new RuntimeException("IP này đã bị chặn");
         }
         
-        BlockedIP.BlockType blockType = BlockedIP.BlockType.valueOf(request.getBlockType());
+        // Validate block type
+        BlockedIP.BlockType blockType;
+        try {
+            blockType = BlockedIP.BlockType.valueOf(request.getBlockType());
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid block type: {}", request.getBlockType());
+            throw new RuntimeException("Loại block không hợp lệ: " + request.getBlockType());
+        }
         
         Instant blockedUntil = null;
-        if (blockType == BlockedIP.BlockType.TEMPORARY && request.getDurationHours() != null) {
+        if (blockType == BlockedIP.BlockType.TEMPORARY) {
+            if (request.getDurationHours() == null || request.getDurationHours() <= 0) {
+                throw new RuntimeException("Thời gian block tạm thời phải lớn hơn 0");
+            }
             blockedUntil = Instant.now().plus(request.getDurationHours(), ChronoUnit.HOURS);
         }
         
         BlockedIP blockedIP = BlockedIP.builder()
-                .ipAddress(request.getIpAddress())
+                .ipAddress(ipAddress)
                 .blockType(blockType)
                 .reason(request.getReason())
                 .blockedById(blockedById)
@@ -67,7 +84,10 @@ public class BlockedIPService {
                 .blockedRequestsCount(0L)
                 .build();
         
-        return blockedIPRepository.save(blockedIP);
+        BlockedIP saved = blockedIPRepository.save(blockedIP);
+        log.info("✅ IP {} blocked successfully with id: {}", ipAddress, saved.getId());
+        
+        return saved;
     }
 
     /**

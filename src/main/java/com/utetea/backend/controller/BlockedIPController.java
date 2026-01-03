@@ -42,12 +42,18 @@ public class BlockedIPController {
             @RequestBody BlockIPRequest request,
             @AuthenticationPrincipal User currentUser) {
         
-        log.info("POST /api/blocked-ips/block - IP: {}", request.getIpAddress());
+        log.info("POST /api/blocked-ips/block - IP: {} | Type: {} | By: {}", 
+            request.getIpAddress(), request.getBlockType(), currentUser.getUsername());
         
-        BlockedIP blocked = blockedIPService.blockIP(request, currentUser.getId());
-        BlockedIPDto dto = BlockedIPDto.fromEntity(blocked, currentUser.getUsername(), null, null);
-        
-        return ResponseEntity.ok(ApiResponse.success("IP đã được chặn", dto));
+        try {
+            BlockedIP blocked = blockedIPService.blockIP(request, currentUser.getId());
+            BlockedIPDto dto = BlockedIPDto.fromEntity(blocked, currentUser.getUsername(), null, null);
+            
+            return ResponseEntity.ok(ApiResponse.success("IP đã được chặn", dto));
+        } catch (RuntimeException e) {
+            log.error("Failed to block IP: {} - Error: {}", request.getIpAddress(), e.getMessage());
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
     }
 
     @PostMapping("/{id}/unblock")
