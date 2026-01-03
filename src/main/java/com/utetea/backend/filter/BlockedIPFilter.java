@@ -40,7 +40,11 @@ public class BlockedIPFilter extends OncePerRequestFilter {
         String normalizedIP = normalizeIP(clientIP);
         String requestPath = request.getRequestURI();
         
-        log.info("🔍 [IP CHECK] IP: {} | Normalized: {} | Path: {}", clientIP, normalizedIP, requestPath);
+        // Log chi tiết để debug
+        log.info("🔍 [IP CHECK] Original IP: {} | Normalized: {} | Path: {} | Headers: X-Forwarded-For={}, X-Real-IP={}", 
+            clientIP, normalizedIP, requestPath, 
+            request.getHeader("X-Forwarded-For"), 
+            request.getHeader("X-Real-IP"));
 
         // Check nếu IP bị block (kiểm tra cả IP gốc và IP đã normalize)
         boolean isBlocked = blockedIPService.checkAndIncrementIfBlocked(clientIP);
