@@ -5,8 +5,8 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "java -jar app.jar",
-    "healthcheckPath": "/api/categories",
+    "startCommand": "java -Xmx512m -jar app.jar",
+    "healthcheckPath": "/actuator/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10

@@ -54,6 +54,9 @@ public class SecurityConfig {
                         // Root and static resources
                         .requestMatchers("/", "/index.html", "/error").permitAll()
                         
+                        // Actuator health check (for Railway)
+                        .requestMatchers("/actuator/**").permitAll()
+                        
                         // Public endpoints (Auth - including OTP)
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/otp/**").permitAll()
