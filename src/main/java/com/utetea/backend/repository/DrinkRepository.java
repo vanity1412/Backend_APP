@@ -52,4 +52,9 @@ public interface DrinkRepository extends JpaRepository<Drink, Long> {
            "LEFT JOIN FETCH d.sizes " +
            "WHERE d.isActive = true AND LOWER(d.name) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     List<Drink> searchByNameWithSizesAndCategory(@Param("keyword") String keyword);
+    
+    // Đếm số lượng drink theo category
+    int countByCategoryIdAndIsActiveTrue(Long categoryId);
+    
+    int countByCategoryId(Long categoryId);
 }

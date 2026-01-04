@@ -10,4 +10,5 @@ public class DrinkCategoryDto {
     private String imageUrl;
     private Integer displayOrder;
     private Boolean isActive;
+    private Integer drinkCount; // Số lượng sản phẩm trong danh mục
 }
