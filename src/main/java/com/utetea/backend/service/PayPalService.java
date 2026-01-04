@@ -19,6 +19,18 @@ public class PayPalService {
     private final APIContext apiContext;
     private final PayPalConfig payPalConfig;
     
+    public String getClientId() {
+        return payPalConfig.getClientId();
+    }
+    
+    public String getClientSecret() {
+        return payPalConfig.getClientSecret();
+    }
+    
+    public String getMode() {
+        return payPalConfig.getMode();
+    }
+    
     public String createPayment(Double total, String currency, String description) throws PayPalRESTException {
         if (currency == null || currency.isEmpty()) {
             currency = "USD";

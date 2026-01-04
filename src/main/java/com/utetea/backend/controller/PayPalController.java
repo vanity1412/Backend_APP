@@ -93,4 +93,22 @@ public class PayPalController {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(ApiResponse.error("Payment was cancelled"));
     }
+    
+    /**
+     * Debug endpoint - kiểm tra PayPal config (chỉ hiển thị 10 ký tự đầu)
+     */
+    @GetMapping("/debug-config")
+    public ResponseEntity<Map<String, String>> debugConfig() {
+        Map<String, String> config = new HashMap<>();
+        String clientId = payPalService.getClientId();
+        String clientSecret = payPalService.getClientSecret();
+        
+        config.put("clientId_prefix", clientId != null && clientId.length() > 10 ? clientId.substring(0, 10) + "..." : "NULL or SHORT");
+        config.put("clientSecret_prefix", clientSecret != null && clientSecret.length() > 10 ? clientSecret.substring(0, 10) + "..." : "NULL or SHORT");
+        config.put("clientId_length", clientId != null ? String.valueOf(clientId.length()) : "0");
+        config.put("clientSecret_length", clientSecret != null ? String.valueOf(clientSecret.length()) : "0");
+        config.put("mode", payPalService.getMode());
+        
+        return ResponseEntity.ok(config);
+    }
 }

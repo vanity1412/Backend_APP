@@ -77,6 +77,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/zalopay/callback").permitAll()
                         .requestMatchers("/api/paypal/success").permitAll()
                         .requestMatchers("/api/paypal/cancel").permitAll()
+                        .requestMatchers("/api/paypal/debug-config").permitAll()
                         
                         // WebSocket endpoints
                         .requestMatchers("/ws/**").permitAll()
