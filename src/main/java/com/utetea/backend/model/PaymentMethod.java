@@ -7,7 +7,9 @@ public enum PaymentMethod {
     COD,
     VNPAY,
     VIETQR,
-    MOMO;
+    MOMO,
+    ZALOPAY,
+    PAYPAL;
     
     @JsonValue
     public String getValue() {

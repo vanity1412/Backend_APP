@@ -266,6 +266,24 @@ public class OrderService {
             log.error("Failed to send order email", e);
         }
 
+        // 💳 Email thanh toán thành công cho payment online (VNPAY, ZALOPAY, PAYPAL)
+        PaymentMethod pm = order.getPaymentMethod();
+        if (pm == PaymentMethod.VNPAY || pm == PaymentMethod.ZALOPAY || pm == PaymentMethod.PAYPAL) {
+            try {
+                emailService.sendPaymentSuccessEmail(order);
+                log.info("Payment success email sent for order #{} via {}", order.getId(), pm.name());
+            } catch (Exception e) {
+                log.error("Failed to send payment success email for order #{}", order.getId(), e);
+            }
+            
+            // Log payment success cho monitoring
+            try {
+                userMonitoringService.logPaymentSuccess(user.getId(), order.getId(), pm.name(), null);
+            } catch (Exception e) {
+                log.error("Failed to log payment success to monitoring", e);
+            }
+        }
+
         // [OneSignal] Notification cho Manager
         sendNotificationToManagers(order);
 

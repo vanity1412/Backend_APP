@@ -344,7 +344,160 @@ public class EmailService {
             case VNPAY: return "VNPay";
             case VIETQR: return "VietQR";
             case MOMO: return "MoMo";
+            case ZALOPAY: return "ZaloPay";
+            case PAYPAL: return "PayPal";
             default: return "Khác";
         }
+    }
+    
+    /**
+     * Gửi email xác nhận thanh toán thành công - ưu tiên SendGrid, fallback SMTP
+     */
+    @Async
+    public void sendPaymentSuccessEmail(Order order) {
+        String toEmail = order.getUser().getEmail();
+        String subject = "Thanh toán thành công - Đơn hàng #" + order.getId() + " - UTE Tea";
+        String htmlContent = buildPaymentSuccessEmailContent(order);
+        
+        // Try SendGrid first
+        if (sendGridEmailService.isEnabled()) {
+            log.info("Sending payment success email via SendGrid to: {}", toEmail);
+            if (sendGridEmailService.sendHtmlEmail(toEmail, subject, htmlContent)) {
+                log.info("Payment success email sent successfully via SendGrid to: {}", toEmail);
+                return;
+            }
+            log.warn("SendGrid failed, falling back to SMTP...");
+        }
+        
+        // Fallback to SMTP
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
+            
+            mailSender.send(message);
+            log.info("Payment success email sent successfully via SMTP to: {}", toEmail);
+        } catch (MessagingException e) {
+            log.error("Failed to send payment success email to: {}", toEmail, e);
+        } catch (Exception e) {
+            log.error("Unexpected error sending payment success email to: {}", toEmail, e);
+        }
+    }
+    
+    private String buildPaymentSuccessEmailContent(Order order) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+        
+        StringBuilder content = new StringBuilder();
+        content.append("<!DOCTYPE html>");
+        content.append("<html>");
+        content.append("<head>");
+        content.append("<meta charset='UTF-8'>");
+        content.append("<style>");
+        content.append("body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }");
+        content.append(".container { max-width: 600px; margin: 0 auto; padding: 20px; }");
+        content.append(".header { background-color: #2196F3; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }");
+        content.append(".content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }");
+        content.append(".order-info { background-color: white; padding: 15px; margin: 10px 0; border-radius: 5px; }");
+        content.append(".item { border-bottom: 1px solid #eee; padding: 10px 0; }");
+        content.append(".item:last-child { border-bottom: none; }");
+        content.append(".total { font-size: 18px; font-weight: bold; color: #2196F3; margin-top: 15px; }");
+        content.append(".payment-badge { background-color: #4CAF50; color: white; padding: 5px 15px; border-radius: 20px; display: inline-block; }");
+        content.append(".footer { text-align: center; padding: 20px; color: #777; font-size: 12px; }");
+        content.append(".thank-you { background-color: #e3f2fd; padding: 15px; margin: 15px 0; border-left: 4px solid #2196F3; border-radius: 5px; }");
+        content.append("</style>");
+        content.append("</head>");
+        content.append("<body>");
+        content.append("<div class='container'>");
+        
+        // Header
+        content.append("<div class='header'>");
+        content.append("<h1>💳 Thanh toán thành công!</h1>");
+        content.append("</div>");
+        
+        // Content
+        content.append("<div class='content'>");
+        content.append("<p>Xin chào <strong>").append(order.getUser().getFullName()).append("</strong>,</p>");
+        content.append("<p>Chúng tôi xác nhận đã nhận được thanh toán cho đơn hàng của bạn.</p>");
+        
+        // Payment Info
+        content.append("<div class='order-info'>");
+        content.append("<h3>💰 Thông tin thanh toán</h3>");
+        content.append("<p><strong>Mã đơn hàng:</strong> #").append(order.getId()).append("</p>");
+        content.append("<p><strong>Phương thức:</strong> <span class='payment-badge'>").append(getPaymentMethodDisplayName(order.getPaymentMethod())).append("</span></p>");
+        content.append("<p><strong>Số tiền:</strong> <span style='color: #4CAF50; font-weight: bold;'>").append(formatPrice(order.getFinalPrice())).append("</span></p>");
+        content.append("<p><strong>Thời gian:</strong> ").append(java.time.LocalDateTime.now().format(formatter)).append("</p>");
+        content.append("<p><strong>Trạng thái:</strong> <span style='color: #4CAF50;'>✓ Đã thanh toán</span></p>");
+        content.append("</div>");
+        
+        // Order Info
+        content.append("<div class='order-info'>");
+        content.append("<h3>📦 Thông tin đơn hàng</h3>");
+        content.append("<p><strong>Cửa hàng:</strong> ").append(order.getStore().getStoreName()).append("</p>");
+        content.append("<p><strong>Loại đơn:</strong> ").append(order.getType() == com.utetea.backend.model.OrderType.DELIVERY ? "Giao hàng" : "Lấy tại cửa hàng").append("</p>");
+        if (order.getAddress() != null && !order.getAddress().isEmpty()) {
+            content.append("<p><strong>Địa chỉ:</strong> ").append(order.getAddress()).append("</p>");
+        }
+        content.append("</div>");
+        
+        // Order Items
+        content.append("<div class='order-info'>");
+        content.append("<h3>🧋 Chi tiết sản phẩm</h3>");
+        
+        for (OrderItem item : order.getItems()) {
+            content.append("<div class='item'>");
+            content.append("<p><strong>").append(item.getDrinkNameSnapshot()).append("</strong> (").append(item.getSizeNameSnapshot()).append(")</p>");
+            
+            if (item.getToppings() != null && !item.getToppings().isEmpty()) {
+                content.append("<p style='color: #666; font-size: 14px;'>+ ");
+                content.append(item.getToppings().stream()
+                    .map(t -> t.getToppingNameSnapshot())
+                    .reduce((a, b) -> a + ", " + b)
+                    .orElse(""));
+                content.append("</p>");
+            }
+            
+            content.append("<p>x").append(item.getQuantity()).append(" = <strong>").append(formatPrice(item.getItemPrice())).append("</strong></p>");
+            content.append("</div>");
+        }
+        content.append("</div>");
+        
+        // Price Summary
+        content.append("<div class='order-info'>");
+        content.append("<p>Tổng tiền hàng: ").append(formatPrice(order.getTotalPrice())).append("</p>");
+        
+        if (order.getDiscount().compareTo(BigDecimal.ZERO) > 0) {
+            content.append("<p style='color: #e91e63;'>Giảm giá");
+            if (order.getPromotion() != null) {
+                content.append(" (").append(order.getPromotion().getCode()).append(")");
+            }
+            content.append(": -").append(formatPrice(order.getDiscount())).append("</p>");
+        }
+        
+        content.append("<p class='total'>Đã thanh toán: ").append(formatPrice(order.getFinalPrice())).append("</p>");
+        content.append("</div>");
+        
+        // Thank you message
+        content.append("<div class='thank-you'>");
+        content.append("<p style='margin: 0;'><strong>🎉 Cảm ơn bạn đã thanh toán!</strong></p>");
+        content.append("<p style='margin: 5px 0 0 0;'>Đơn hàng của bạn đang được chuẩn bị. Chúng tôi sẽ thông báo khi đơn hàng sẵn sàng.</p>");
+        content.append("</div>");
+        
+        content.append("<p>Trân trọng,<br><strong>UTE Tea Team</strong></p>");
+        content.append("</div>");
+        
+        // Footer
+        content.append("<div class='footer'>");
+        content.append("<p>Email này được gửi tự động, vui lòng không trả lời.</p>");
+        content.append("<p>&copy; 2024 UTE Tea. All rights reserved.</p>");
+        content.append("</div>");
+        
+        content.append("</div>");
+        content.append("</body>");
+        content.append("</html>");
+        
+        return content.toString();
     }
 }

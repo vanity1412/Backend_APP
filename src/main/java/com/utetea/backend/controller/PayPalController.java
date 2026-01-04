@@ -28,7 +28,22 @@ public class PayPalController {
     @PreAuthorize("hasAnyRole('USER', 'MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, String>>> createPayment(@RequestBody PayPalPaymentRequest request) {
         try {
-            double amount = Double.parseDouble(request.getTotal());
+            // Validate amount
+            if (request.getTotal() == null || request.getTotal().isEmpty()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Amount is required"));
+            }
+            
+            double amount;
+            try {
+                amount = Double.parseDouble(request.getTotal());
+            } catch (NumberFormatException e) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Invalid amount format: " + request.getTotal()));
+            }
+            
+            if (amount <= 0) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Amount must be greater than 0"));
+            }
+            
             String approvalUrl = payPalService.createPayment(amount, request.getCurrency(), request.getDescription());
             
             Map<String, String> result = new HashMap<>();
@@ -37,11 +52,18 @@ public class PayPalController {
             log.info("PayPal payment created: {}", approvalUrl);
             return ResponseEntity.ok(ApiResponse.success("Payment URL created", result));
         } catch (NumberFormatException e) {
+            log.error("PayPal invalid amount", e);
             return ResponseEntity.badRequest().body(ApiResponse.error("Invalid amount format"));
         } catch (PayPalRESTException e) {
-            log.error("PayPal error", e);
+            log.error("PayPal API error: {} - {}", e.getResponsecode(), e.getMessage());
+            String errorMsg = "PayPal error: " + e.getMessage();
+            if (e.getResponsecode() == 401) {
+                errorMsg = "PayPal credentials invalid or expired. Please check PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET";
+            } else if (e.getResponsecode() == 400) {
+                errorMsg = "PayPal request invalid: " + e.getDetails();
+            }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("Error creating payment: " + e.getMessage()));
+                .body(ApiResponse.error(errorMsg));
         }
     }
     
