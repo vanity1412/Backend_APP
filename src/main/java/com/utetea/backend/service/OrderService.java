@@ -266,9 +266,9 @@ public class OrderService {
             log.error("Failed to send order email", e);
         }
 
-        // 💳 Email thanh toán thành công cho payment online (VNPAY, ZALOPAY, PAYPAL)
+        // 💳 Email thanh toán thành công cho payment online (VNPAY, PAYPAL)
         PaymentMethod pm = order.getPaymentMethod();
-        if (pm == PaymentMethod.VNPAY || pm == PaymentMethod.ZALOPAY || pm == PaymentMethod.PAYPAL) {
+        if (pm == PaymentMethod.VNPAY || pm == PaymentMethod.PAYPAL) {
             try {
                 emailService.sendPaymentSuccessEmail(order);
                 log.info("Payment success email sent for order #{} via {}", order.getId(), pm.name());

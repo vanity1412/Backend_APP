@@ -8,7 +8,6 @@ public enum PaymentMethod {
     VNPAY,
     VIETQR,
     MOMO,
-    ZALOPAY,
     PAYPAL;
     
     @JsonValue

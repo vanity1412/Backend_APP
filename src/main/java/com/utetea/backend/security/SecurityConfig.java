@@ -74,7 +74,6 @@ public class SecurityConfig {
                         .requestMatchers("/api/vnpay/test-config").permitAll()
                         .requestMatchers("/api/vnpay/test-payment-url").permitAll()
                         .requestMatchers("/api/momo/callback").permitAll()
-                        .requestMatchers("/api/zalopay/callback").permitAll()
                         .requestMatchers("/api/paypal/success").permitAll()
                         .requestMatchers("/api/paypal/cancel").permitAll()
                         .requestMatchers("/api/paypal/debug-config").permitAll()
@@ -108,7 +107,6 @@ public class SecurityConfig {
                         .requestMatchers("/api/vnpay/create-payment-amount").hasAnyRole("USER", "MANAGER", "ADMIN")
                         .requestMatchers("/api/vnpay/create-order-after-payment").hasAnyRole("USER", "MANAGER", "ADMIN")
                         .requestMatchers("/api/momo/**").hasAnyRole("USER", "MANAGER", "ADMIN")
-                        .requestMatchers("/api/zalopay/**").hasAnyRole("USER", "MANAGER", "ADMIN")
                         .requestMatchers("/api/paypal/**").hasAnyRole("USER", "MANAGER", "ADMIN")
                         
                         // Review endpoints - public for reading, authenticated for writing

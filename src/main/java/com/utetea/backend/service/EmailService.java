@@ -344,7 +344,6 @@ public class EmailService {
             case VNPAY: return "VNPay";
             case VIETQR: return "VietQR";
             case MOMO: return "MoMo";
-            case ZALOPAY: return "ZaloPay";
             case PAYPAL: return "PayPal";
             default: return "Khác";
         }
