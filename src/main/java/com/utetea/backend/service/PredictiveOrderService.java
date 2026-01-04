@@ -2,6 +2,7 @@ package com.utetea.backend.service;
 
 import com.utetea.backend.dto.PredictiveOrderDto;
 import com.utetea.backend.dto.PredictiveOrderDto.*;
+import com.utetea.backend.dto.WeatherDto;
 import com.utetea.backend.model.*;
 import com.utetea.backend.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +19,7 @@ import java.util.stream.Collectors;
 /**
  * Service phân tích và dự đoán món khách hàng muốn đặt
  * Dựa trên: thói quen thời gian, tần suất đặt, thời tiết (optional)
- * Nếu không có lịch sử → gợi ý sản phẩm phổ biến nhất
+ * Nếu không có lịch sử → gợi ý sản phẩm phổ biến nhất theo thời tiết
  */
 @Service
 @RequiredArgsConstructor
@@ -28,17 +29,51 @@ public class PredictiveOrderService {
     private final OrderRepository orderRepository;
     private final DrinkRepository drinkRepository;
     private final DrinkSizeRepository drinkSizeRepository;
+    private final WeatherService weatherService;
     
     // Ngưỡng confidence để hiển thị prediction (giảm để dễ test)
     private static final double MIN_CONFIDENCE = 0.2;
     
+    // Cache thời tiết
+    private WeatherDto cachedWeather;
+    private long weatherCacheTime = 0;
+    private static final long WEATHER_CACHE_DURATION = 30 * 60 * 1000; // 30 phút
+    
+    // Keywords cho từng loại thời tiết
+    private static final List<String> HOT_WEATHER_KEYWORDS = Arrays.asList(
+        "đá", "ice", "lạnh", "freeze", "sinh tố", "smoothie", "chanh", "dừa", 
+        "đào", "vải", "xoài", "dâu", "việt quất", "trái cây"
+    );
+    
+    private static final List<String> COLD_WEATHER_KEYWORDS = Arrays.asList(
+        "nóng", "hot", "ấm", "cacao", "gừng", "cà phê", "coffee", "sữa nóng",
+        "trà nóng", "matcha nóng", "cappuccino", "latte"
+    );
+    
+    private static final List<String> RAINY_WEATHER_KEYWORDS = Arrays.asList(
+        "nóng", "hot", "ấm", "cacao", "gừng", "trà gừng", "sữa nóng"
+    );
+    
+    private static final List<String> NORMAL_WEATHER_KEYWORDS = Arrays.asList(
+        "trà sữa", "milk tea", "trân châu", "matcha", "oolong", "trà đào"
+    );
+    
     /**
      * Dự đoán món khách hàng muốn đặt
-     * Luôn trả về gợi ý - nếu không có lịch sử thì gợi ý sản phẩm phổ biến
+     * Luôn trả về gợi ý - nếu không có lịch sử thì gợi ý sản phẩm phổ biến theo thời tiết
      */
     public PredictiveOrderDto getPrediction(Long userId, String weatherCondition) {
         try {
             log.info("Getting prediction for userId: {}", userId);
+            
+            // Lấy thời tiết thực tế nếu không truyền vào
+            WeatherDto weather = getWeatherData();
+            String actualWeather = weatherCondition;
+            if ((actualWeather == null || actualWeather.isEmpty()) && weather != null) {
+                actualWeather = determineWeatherType(weather);
+                log.info("Auto-detected weather: {} (temp: {}°C, condition: {})", 
+                    actualWeather, weather.getTemperature(), weather.getCondition());
+            }
             
             List<Order> orders;
             try {
@@ -55,19 +90,19 @@ public class PredictiveOrderService {
             int currentHour = now.getHour();
             DayOfWeek currentDay = now.getDayOfWeek();
             
-            // Nếu không có lịch sử đặt hàng → gợi ý sản phẩm phổ biến
+            // Nếu không có lịch sử đặt hàng → gợi ý sản phẩm phổ biến theo thời tiết
             if (orders == null || orders.isEmpty()) {
-                log.info("No orders found for user {}, returning popular drink", userId);
-                return getPopularDrinkPrediction(weatherCondition);
+                log.info("No orders found for user {}, returning weather-based recommendation", userId);
+                return getWeatherBasedPrediction(weather, actualWeather);
             }
             
             // Phân tích patterns
             Map<Long, DrinkPattern> drinkPatterns = analyzeDrinkPatterns(orders, currentHour, currentDay);
             
-            // Nếu không tìm thấy pattern → gợi ý sản phẩm phổ biến
+            // Nếu không tìm thấy pattern → gợi ý sản phẩm theo thời tiết
             if (drinkPatterns == null || drinkPatterns.isEmpty()) {
-                log.info("No drink patterns found for user, returning popular drink");
-                return getPopularDrinkPrediction(weatherCondition);
+                log.info("No drink patterns found for user, returning weather-based recommendation");
+                return getWeatherBasedPrediction(weather, actualWeather);
             }
             
             // Tìm drink có score cao nhất
@@ -79,11 +114,11 @@ public class PredictiveOrderService {
                     bestPattern != null ? bestPattern.getDrinkName() : "null",
                     bestPattern != null ? bestPattern.getScore() : 0);
             
-            // Nếu confidence quá thấp → gợi ý sản phẩm phổ biến
+            // Nếu confidence quá thấp → gợi ý sản phẩm theo thời tiết
             if (bestPattern == null || bestPattern.getScore() < MIN_CONFIDENCE) {
-                log.info("Confidence too low: {} < {}, returning popular drink", 
+                log.info("Confidence too low: {} < {}, returning weather-based recommendation", 
                         bestPattern != null ? bestPattern.getScore() : 0, MIN_CONFIDENCE);
-                return getPopularDrinkPrediction(weatherCondition);
+                return getWeatherBasedPrediction(weather, actualWeather);
             }
             
             // Tìm sizeId từ sizeName và drinkId
@@ -107,7 +142,7 @@ public class PredictiveOrderService {
             }
             
             // Build prediction response
-            List<String> reasons = buildTriggerReasons(bestPattern, currentHour, currentDay, weatherCondition);
+            List<String> reasons = buildTriggerReasons(bestPattern, currentHour, currentDay, actualWeather, weather);
             
             return PredictiveOrderDto.builder()
                     .hasPrediction(true)
@@ -119,19 +154,61 @@ public class PredictiveOrderService {
                     
         } catch (Exception e) {
             log.error("Error in getPrediction for userId {}: {}", userId, e.getMessage(), e);
-            // Trả về gợi ý phổ biến khi có lỗi
-            return getPopularDrinkPrediction(weatherCondition);
+            // Trả về gợi ý theo thời tiết khi có lỗi
+            return getWeatherBasedPrediction(getWeatherData(), weatherCondition);
         }
     }
     
     /**
-     * Lấy gợi ý sản phẩm phổ biến nhất khi không có lịch sử
+     * Lấy dữ liệu thời tiết (có cache)
      */
-    private PredictiveOrderDto getPopularDrinkPrediction(String weatherCondition) {
+    private WeatherDto getWeatherData() {
+        long now = System.currentTimeMillis();
+        if (cachedWeather == null || (now - weatherCacheTime) > WEATHER_CACHE_DURATION) {
+            try {
+                cachedWeather = weatherService.getCurrentWeather();
+                weatherCacheTime = now;
+                log.info("Fetched weather: {}°C, {}", 
+                    cachedWeather.getTemperature(), cachedWeather.getCondition());
+            } catch (Exception e) {
+                log.warn("Could not fetch weather data: {}", e.getMessage());
+                return null;
+            }
+        }
+        return cachedWeather;
+    }
+    
+    /**
+     * Xác định loại thời tiết từ WeatherDto
+     */
+    private String determineWeatherType(WeatherDto weather) {
+        if (weather == null) return "normal";
+        
+        String condition = weather.getCondition();
+        double temp = weather.getTemperature();
+        
+        // Kiểm tra mưa
+        if (condition != null && 
+            (condition.equalsIgnoreCase("Rain") || 
+             condition.equalsIgnoreCase("Drizzle") ||
+             condition.equalsIgnoreCase("Thunderstorm"))) {
+            return "rainy";
+        }
+        
+        // Kiểm tra nhiệt độ
+        if (temp >= 32) return "hot";
+        if (temp < 22) return "cold";
+        
+        return "normal";
+    }
+    
+    /**
+     * Gợi ý sản phẩm dựa trên thời tiết thực tế
+     */
+    private PredictiveOrderDto getWeatherBasedPrediction(WeatherDto weather, String weatherType) {
         try {
-            log.info("Getting popular drink prediction");
+            log.info("Getting weather-based prediction: type={}", weatherType);
             
-            // Lấy drink đầu tiên active (đơn giản và nhanh)
             List<Drink> activeDrinks = drinkRepository.findByIsActiveTrue();
             
             if (activeDrinks == null || activeDrinks.isEmpty()) {
@@ -142,12 +219,23 @@ public class PredictiveOrderService {
                         .build();
             }
             
-            // Lấy drink đầu tiên
-            Drink popularDrink = activeDrinks.get(0);
-            log.info("Using first active drink: {}", popularDrink.getName());
+            // Lọc đồ uống theo thời tiết
+            List<Drink> filteredDrinks = filterDrinksByWeather(activeDrinks, weatherType);
+            
+            // Random chọn 1 món từ danh sách đã lọc
+            Random random = new Random();
+            Drink selectedDrink;
+            if (!filteredDrinks.isEmpty()) {
+                selectedDrink = filteredDrinks.get(random.nextInt(filteredDrinks.size()));
+            } else {
+                // Fallback: random từ tất cả
+                selectedDrink = activeDrinks.get(random.nextInt(activeDrinks.size()));
+            }
+            
+            log.info("Selected drink for weather {}: {}", weatherType, selectedDrink.getName());
             
             // Lấy size mặc định
-            List<com.utetea.backend.model.DrinkSize> sizes = drinkSizeRepository.findByDrinkId(popularDrink.getId());
+            List<com.utetea.backend.model.DrinkSize> sizes = drinkSizeRepository.findByDrinkId(selectedDrink.getId());
             Long sizeId = null;
             String sizeName = null;
             if (sizes != null && !sizes.isEmpty()) {
@@ -155,48 +243,160 @@ public class PredictiveOrderService {
                 sizeName = sizes.get(0).getSizeName();
             }
             
-            // Build reasons
-            List<String> reasons = new ArrayList<>();
-            reasons.add("Đây là món được yêu thích nhất");
+            // Build reasons dựa trên thời tiết thực tế
+            List<String> reasons = buildWeatherReasons(weather, weatherType, selectedDrink);
             
-            if (weatherCondition != null && !weatherCondition.isEmpty()) {
-                if (weatherCondition.equalsIgnoreCase("hot") || weatherCondition.equalsIgnoreCase("sunny")) {
-                    reasons.add("Thời tiết nóng, thích hợp với đồ uống mát");
-                } else if (weatherCondition.equalsIgnoreCase("cold") || weatherCondition.equalsIgnoreCase("rainy")) {
-                    reasons.add("Thời tiết se lạnh, thích hợp với đồ uống ấm");
-                }
-            }
+            // Build message
+            String message = buildWeatherMessage(weather, weatherType, selectedDrink);
             
             PredictedDrink predictedDrink = PredictedDrink.builder()
-                    .drinkId(popularDrink.getId())
-                    .drinkName(popularDrink.getName())
-                    .drinkImage(popularDrink.getImageUrl())
+                    .drinkId(selectedDrink.getId())
+                    .drinkName(selectedDrink.getName())
+                    .drinkImage(selectedDrink.getImageUrl())
                     .sizeName(sizeName)
                     .sizeId(sizeId)
-                    .price(popularDrink.getBasePrice())
+                    .price(selectedDrink.getBasePrice())
                     .orderCount(0)
                     .lastOrderTime(null)
                     .toppings(new ArrayList<>())
                     .note(null)
                     .build();
             
-            log.info("Returning popular drink prediction: {}", popularDrink.getName());
-            
             return PredictiveOrderDto.builder()
                     .hasPrediction(true)
-                    .message("Bạn có muốn thử " + popularDrink.getName() + " không?")
+                    .message(message)
                     .predictedDrink(predictedDrink)
                     .triggerReasons(reasons)
-                    .confidenceScore(0.7)
+                    .confidenceScore(0.75)
                     .build();
                     
         } catch (Exception e) {
-            log.error("Error in getPopularDrinkPrediction: {}", e.getMessage(), e);
+            log.error("Error in getWeatherBasedPrediction: {}", e.getMessage(), e);
             return PredictiveOrderDto.builder()
                     .hasPrediction(false)
                     .message("Không thể tải gợi ý")
                     .build();
         }
+    }
+    
+    /**
+     * Lọc đồ uống theo loại thời tiết
+     */
+    private List<Drink> filterDrinksByWeather(List<Drink> drinks, String weatherType) {
+        List<String> keywords;
+        
+        switch (weatherType != null ? weatherType.toLowerCase() : "normal") {
+            case "hot":
+            case "sunny":
+                keywords = HOT_WEATHER_KEYWORDS;
+                break;
+            case "cold":
+                keywords = COLD_WEATHER_KEYWORDS;
+                break;
+            case "rainy":
+            case "rain":
+                keywords = RAINY_WEATHER_KEYWORDS;
+                break;
+            default:
+                keywords = NORMAL_WEATHER_KEYWORDS;
+        }
+        
+        return drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                String desc = d.getDescription() != null ? d.getDescription().toLowerCase() : "";
+                return keywords.stream().anyMatch(k -> name.contains(k) || desc.contains(k));
+            })
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * Build reasons dựa trên thời tiết
+     */
+    private List<String> buildWeatherReasons(WeatherDto weather, String weatherType, Drink drink) {
+        List<String> reasons = new ArrayList<>();
+        
+        if (weather != null) {
+            String tempInfo = String.format("%.0f°C", weather.getTemperature());
+            
+            switch (weatherType != null ? weatherType.toLowerCase() : "normal") {
+                case "hot":
+                case "sunny":
+                    reasons.add("🌡️ Nhiệt độ hiện tại: " + tempInfo + " - Trời nóng!");
+                    reasons.add("🧊 " + drink.getName() + " mát lạnh giúp giải nhiệt");
+                    reasons.add("💧 Đồ uống này rất phù hợp với thời tiết nóng");
+                    break;
+                case "cold":
+                    reasons.add("🌡️ Nhiệt độ hiện tại: " + tempInfo + " - Trời se lạnh");
+                    reasons.add("☕ " + drink.getName() + " ấm áp cho ngày lạnh");
+                    reasons.add("🔥 Đồ uống nóng giúp bạn ấm người");
+                    break;
+                case "rainy":
+                case "rain":
+                    reasons.add("🌧️ Trời đang mưa - " + tempInfo);
+                    reasons.add("☕ " + drink.getName() + " ấm áp cho ngày mưa");
+                    reasons.add("🏠 Thưởng thức đồ uống ấm trong ngày mưa thật tuyệt!");
+                    break;
+                default:
+                    reasons.add("🌤️ Thời tiết dễ chịu - " + tempInfo);
+                    reasons.add("🧋 " + drink.getName() + " là lựa chọn tuyệt vời");
+                    reasons.add("⭐ Đây là món được yêu thích");
+            }
+            
+            if (weather.getDescription() != null) {
+                reasons.add("📍 " + weather.getCity() + ": " + weather.getDescription());
+            }
+        } else {
+            // Fallback khi không có weather
+            int hour = LocalTime.now().getHour();
+            if (hour < 10) {
+                reasons.add("🌅 Buổi sáng tươi mới!");
+                reasons.add("☕ " + drink.getName() + " để bắt đầu ngày mới");
+            } else if (hour < 14) {
+                reasons.add("🌞 Giữa trưa rồi!");
+                reasons.add("🧊 " + drink.getName() + " giải khát buổi trưa");
+            } else if (hour < 18) {
+                reasons.add("🌤️ Buổi chiều thư giãn!");
+                reasons.add("🧋 " + drink.getName() + " cho buổi chiều");
+            } else {
+                reasons.add("🌙 Buổi tối yên bình!");
+                reasons.add("🍵 " + drink.getName() + " thư giãn cuối ngày");
+            }
+        }
+        
+        return reasons;
+    }
+    
+    /**
+     * Build message gợi ý theo thời tiết
+     */
+    private String buildWeatherMessage(WeatherDto weather, String weatherType, Drink drink) {
+        if (weather != null) {
+            String tempInfo = String.format("%.0f°C", weather.getTemperature());
+            
+            switch (weatherType != null ? weatherType.toLowerCase() : "normal") {
+                case "hot":
+                case "sunny":
+                    return "🥵 Trời nóng " + tempInfo + "! Thử " + drink.getName() + " mát lạnh nhé?";
+                case "cold":
+                    return "🥶 Trời lạnh " + tempInfo + "! " + drink.getName() + " ấm áp cho bạn?";
+                case "rainy":
+                case "rain":
+                    return "🌧️ Trời mưa rồi! " + drink.getName() + " ấm nóng nhé?";
+                default:
+                    return "🌤️ Thời tiết đẹp! Thử " + drink.getName() + " không?";
+            }
+        }
+        return "Bạn có muốn thử " + drink.getName() + " không?";
+    }
+    
+    /**
+     * Lấy gợi ý sản phẩm phổ biến nhất khi không có lịch sử
+     * @deprecated Sử dụng getWeatherBasedPrediction thay thế
+     */
+    @Deprecated
+    private PredictiveOrderDto getPopularDrinkPrediction(String weatherCondition) {
+        return getWeatherBasedPrediction(getWeatherData(), weatherCondition);
     }
 
     
@@ -315,31 +515,54 @@ public class PredictiveOrderService {
      * Build danh sách lý do trigger prediction
      */
     private List<String> buildTriggerReasons(DrinkPattern pattern, int currentHour, 
-            DayOfWeek currentDay, String weather) {
+            DayOfWeek currentDay, String weather, WeatherDto weatherDto) {
         List<String> reasons = new ArrayList<>();
         
         // Lý do về thời gian
         String timeOfDay = getTimeOfDayLabel(currentHour);
         if (pattern.hasOrdersAtTime(currentHour)) {
-            reasons.add("Bạn thường đặt món này vào " + timeOfDay);
+            reasons.add("⏰ Bạn thường đặt món này vào " + timeOfDay);
         }
         
         // Lý do về ngày
         if (pattern.hasOrdersOnDay(currentDay)) {
-            reasons.add("Bạn hay đặt món này vào " + getDayLabel(currentDay));
+            reasons.add("📅 Bạn hay đặt món này vào " + getDayLabel(currentDay));
         }
         
         // Lý do về tần suất
         if (pattern.getOrderCount() >= 3) {
-            reasons.add("Đây là món yêu thích của bạn (" + pattern.getOrderCount() + " lần đặt)");
+            reasons.add("❤️ Đây là món yêu thích của bạn (" + pattern.getOrderCount() + " lần đặt)");
         }
         
-        // Lý do về thời tiết (nếu có)
-        if (weather != null && !weather.isEmpty()) {
+        // Lý do về thời tiết (dựa trên dữ liệu thực)
+        if (weatherDto != null) {
+            String tempInfo = String.format("%.0f°C", weatherDto.getTemperature());
+            String weatherType = determineWeatherType(weatherDto);
+            
+            switch (weatherType) {
+                case "hot":
+                    reasons.add("🌡️ Trời nóng " + tempInfo + " - Đồ uống mát rất hợp!");
+                    break;
+                case "cold":
+                    reasons.add("🌡️ Trời lạnh " + tempInfo + " - Đồ uống ấm rất hợp!");
+                    break;
+                case "rainy":
+                    reasons.add("🌧️ Trời đang mưa - Thưởng thức đồ uống ấm thật tuyệt!");
+                    break;
+                default:
+                    reasons.add("🌤️ Thời tiết dễ chịu " + tempInfo);
+            }
+            
+            if (weatherDto.getCity() != null) {
+                reasons.add("📍 " + weatherDto.getCity() + 
+                    (weatherDto.getDescription() != null ? ": " + weatherDto.getDescription() : ""));
+            }
+        } else if (weather != null && !weather.isEmpty()) {
+            // Fallback khi chỉ có weather string
             if (weather.equalsIgnoreCase("hot") || weather.equalsIgnoreCase("sunny")) {
-                reasons.add("Thời tiết nóng, thích hợp với đồ uống mát");
+                reasons.add("☀️ Thời tiết nóng, thích hợp với đồ uống mát");
             } else if (weather.equalsIgnoreCase("cold") || weather.equalsIgnoreCase("rainy")) {
-                reasons.add("Thời tiết se lạnh, thích hợp với đồ uống ấm");
+                reasons.add("🌧️ Thời tiết se lạnh, thích hợp với đồ uống ấm");
             }
         }
         

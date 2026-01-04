@@ -2,6 +2,7 @@ package com.utetea.backend.service;
 
 import com.utetea.backend.dto.ChatResponse;
 import com.utetea.backend.dto.DrinkDto;
+import com.utetea.backend.dto.WeatherDto;
 import com.utetea.backend.model.*;
 import com.utetea.backend.repository.*;
 import com.utetea.backend.mapper.DrinkMapper;
@@ -27,6 +28,12 @@ public class ChatbotService {
     private final StoreRepository storeRepository;
     private final OrderRepository orderRepository;
     private final DrinkMapper drinkMapper;
+    private final WeatherService weatherService;
+    
+    // Cache thời tiết để tránh gọi API quá nhiều
+    private WeatherDto cachedWeather;
+    private long weatherCacheTime = 0;
+    private static final long WEATHER_CACHE_DURATION = 30 * 60 * 1000; // 30 phút
 
     // ==================== INTENT PATTERNS ====================
     
@@ -182,162 +189,261 @@ public class ChatbotService {
         "thư giãn", "relax", "chill", "nghỉ ngơi", "rest", "nhẹ nhàng", "calm",
         "bình tĩnh", "peaceful", "yên bình"
     );
+    
+    // Gợi ý theo thời tiết
+    private static final List<String> WEATHER_PATTERNS = Arrays.asList(
+        "thời tiết", "weather", "trời", "hôm nay trời", "ngoài trời", "nhiệt độ",
+        "gợi ý theo thời tiết", "uống gì hôm nay", "hôm nay uống gì", "nên uống gì"
+    );
+    
+    // Hỏi về size/topping
+    private static final List<String> SIZE_PATTERNS = Arrays.asList(
+        "size", "kích cỡ", "cỡ", "nhỏ", "vừa", "lớn", "s", "m", "l"
+    );
+    
+    private static final List<String> TOPPING_PATTERNS = Arrays.asList(
+        "topping", "thêm", "trân châu", "pudding", "thạch", "kem", "cheese",
+        "foam", "đường đen", "sương sáo"
+    );
 
     // ==================== MAIN PROCESS ====================
     
     public ChatResponse processMessage(String message, Long userId) {
+        if (message == null || message.trim().isEmpty()) {
+            return handleEmptyMessage();
+        }
+        
         String lowerMessage = normalizeVietnamese(message.toLowerCase().trim());
         
-        // Priority-based intent detection
-        
-        // 0. MOOD-BASED RECOMMENDATION (ưu tiên cao)
-        if (containsAny(lowerMessage, MOOD_ASK_PATTERNS)) {
-            return handleMoodAsk();
+        // Kiểm tra độ dài tin nhắn
+        if (lowerMessage.length() > 500) {
+            return handleTooLongMessage();
         }
         
-        if (containsAny(lowerMessage, MOOD_TIRED_PATTERNS)) {
-            return handleMoodTired();
+        // Phân tích ý định với scoring system
+        IntentScore bestIntent = analyzeIntent(lowerMessage, userId);
+        
+        // Xử lý theo ý định có điểm cao nhất
+        return executeIntent(bestIntent, lowerMessage, userId);
+    }
+    
+    // Phân tích ý định với hệ thống điểm số
+    private IntentScore analyzeIntent(String message, Long userId) {
+        List<IntentScore> scores = new ArrayList<>();
+        
+        // Tính điểm cho từng ý định
+        scores.add(new IntentScore("GREETING", calculateScore(message, GREETING_PATTERNS), 1.0));
+        scores.add(new IntentScore("GOODBYE", calculateScore(message, GOODBYE_PATTERNS), 1.0));
+        scores.add(new IntentScore("THANKS", calculateScore(message, THANKS_PATTERNS), 1.0));
+        
+        // Mood patterns có trọng số cao hơn
+        scores.add(new IntentScore("MOOD_ASK", calculateScore(message, MOOD_ASK_PATTERNS), 1.2));
+        scores.add(new IntentScore("MOOD_TIRED", calculateScore(message, MOOD_TIRED_PATTERNS), 1.2));
+        scores.add(new IntentScore("MOOD_HAPPY", calculateScore(message, MOOD_HAPPY_PATTERNS), 1.2));
+        scores.add(new IntentScore("MOOD_SAD", calculateScore(message, MOOD_SAD_PATTERNS), 1.2));
+        scores.add(new IntentScore("MOOD_HOT", calculateScore(message, MOOD_HOT_PATTERNS), 1.2));
+        scores.add(new IntentScore("MOOD_COLD", calculateScore(message, MOOD_COLD_PATTERNS), 1.2));
+        scores.add(new IntentScore("MOOD_ENERGY", calculateScore(message, MOOD_ENERGY_PATTERNS), 1.2));
+        scores.add(new IntentScore("MOOD_RELAX", calculateScore(message, MOOD_RELAX_PATTERNS), 1.2));
+        
+        // Weather-based recommendation - ưu tiên cao
+        scores.add(new IntentScore("WEATHER_RECOMMEND", calculateScore(message, WEATHER_PATTERNS), 1.5));
+        scores.add(new IntentScore("SIZE_INFO", calculateScore(message, SIZE_PATTERNS), 1.0));
+        scores.add(new IntentScore("TOPPING_INFO", calculateScore(message, TOPPING_PATTERNS), 1.0));
+        
+        // Business intents
+        scores.add(new IntentScore("HELP", calculateScore(message, HELP_PATTERNS), 1.0));
+        scores.add(new IntentScore("HOURS", calculateScore(message, HOURS_PATTERNS), 1.0));
+        scores.add(new IntentScore("PAYMENT", calculateScore(message, PAYMENT_PATTERNS), 1.0));
+        scores.add(new IntentScore("DELIVERY", calculateScore(message, DELIVERY_PATTERNS), 1.0));
+        scores.add(new IntentScore("VOUCHER", calculateScore(message, VOUCHER_PATTERNS), 1.0));
+        scores.add(new IntentScore("STORE", calculateScore(message, STORE_PATTERNS), 1.0));
+        
+        // Order query chỉ có ý nghĩa khi có userId
+        if (userId != null) {
+            scores.add(new IntentScore("ORDER", calculateScore(message, ORDER_PATTERNS), 1.0));
         }
         
-        if (containsAny(lowerMessage, MOOD_HAPPY_PATTERNS)) {
-            return handleMoodHappy();
+        scores.add(new IntentScore("RECOMMEND", calculateScore(message, RECOMMEND_PATTERNS), 1.0));
+        scores.add(new IntentScore("CATEGORY", calculateScore(message, CATEGORY_PATTERNS), 1.0));
+        
+        // Price query có trọng số cao khi có từ khóa giá
+        double priceScore = calculateScore(message, PRICE_PATTERNS);
+        if (priceScore > 0 && containsProductKeywords(message)) {
+            priceScore *= 1.3; // Tăng trọng số khi có cả từ khóa sản phẩm
+        }
+        scores.add(new IntentScore("PRICE", priceScore, 1.0));
+        
+        // Drink search
+        scores.add(new IntentScore("TEA_SEARCH", calculateScore(message, TEA_KEYWORDS), 1.1));
+        scores.add(new IntentScore("COFFEE_SEARCH", calculateScore(message, COFFEE_KEYWORDS), 1.1));
+        scores.add(new IntentScore("DRINK_SEARCH", calculateScore(message, DRINK_SEARCH_PATTERNS), 0.9));
+        
+        scores.add(new IntentScore("APP", calculateScore(message, APP_PATTERNS), 1.0));
+        scores.add(new IntentScore("COMPLAINT", calculateScore(message, COMPLAINT_PATTERNS), 1.0));
+        
+        // Tìm intent có điểm cao nhất
+        return scores.stream()
+            .filter(s -> s.getFinalScore() > 0)
+            .max(Comparator.comparing(IntentScore::getFinalScore))
+            .orElse(new IntentScore("SMART_SEARCH", 0.1, 1.0));
+    }
+    
+    // Tính điểm cho pattern matching
+    private double calculateScore(String message, List<String> patterns) {
+        if (patterns == null || patterns.isEmpty()) return 0.0;
+        
+        double score = 0.0;
+        int matchCount = 0;
+        
+        for (String pattern : patterns) {
+            if (message.contains(pattern)) {
+                matchCount++;
+                // Điểm cao hơn cho exact match
+                if (message.equals(pattern)) {
+                    score += 2.0;
+                } else if (message.startsWith(pattern) || message.endsWith(pattern)) {
+                    score += 1.5;
+                } else {
+                    score += 1.0;
+                }
+            }
         }
         
-        if (containsAny(lowerMessage, MOOD_SAD_PATTERNS)) {
-            return handleMoodSad();
+        // Bonus cho nhiều keyword match
+        if (matchCount > 1) {
+            score *= (1.0 + matchCount * 0.1);
         }
         
-        if (containsAny(lowerMessage, MOOD_HOT_PATTERNS)) {
-            return handleMoodHot();
+        return score;
+    }
+    
+    // Kiểm tra có từ khóa sản phẩm không
+    private boolean containsProductKeywords(String message) {
+        List<String> productKeywords = Arrays.asList(
+            "trà", "cà phê", "coffee", "sữa", "đào", "vải", "chanh", "matcha",
+            "latte", "americano", "cappuccino", "espresso", "trân châu", "pudding"
+        );
+        return productKeywords.stream().anyMatch(message::contains);
+    }
+    
+    // Thực thi ý định
+    private ChatResponse executeIntent(IntentScore intent, String message, Long userId) {
+        try {
+            switch (intent.getIntent()) {
+                case "GREETING": return handleGreeting();
+                case "GOODBYE": return handleGoodbye();
+                case "THANKS": return handleThanks();
+                case "MOOD_ASK": return handleMoodAsk();
+                case "MOOD_TIRED": return handleMoodTired();
+                case "MOOD_HAPPY": return handleMoodHappy();
+                case "MOOD_SAD": return handleMoodSad();
+                case "MOOD_HOT": return handleMoodHot();
+                case "MOOD_COLD": return handleMoodCold();
+                case "MOOD_ENERGY": return handleMoodEnergy();
+                case "MOOD_RELAX": return handleMoodRelax();
+                case "WEATHER_RECOMMEND": return handleWeatherRecommendation();
+                case "SIZE_INFO": return handleSizeInfo();
+                case "TOPPING_INFO": return handleToppingInfo();
+                case "HELP": return handleHelp();
+                case "HOURS": return handleOpeningHours();
+                case "PAYMENT": return handlePaymentInfo();
+                case "DELIVERY": return handleDeliveryInfo();
+                case "VOUCHER": return handleVoucherQuery();
+                case "STORE": return handleStoreQuery();
+                case "ORDER": return handleOrderQuery(userId);
+                case "RECOMMEND": return handleRecommendation(message);
+                case "CATEGORY": return handleCategoryQuery();
+                case "PRICE": return handlePriceQuery(message);
+                case "TEA_SEARCH": return handleDrinkSearch(message, "trà");
+                case "COFFEE_SEARCH": return handleDrinkSearch(message, "cà phê");
+                case "DRINK_SEARCH": return handleDrinkSearch(message, null);
+                case "APP": return handleAppInfo();
+                case "COMPLAINT": return handleComplaint();
+                default: return handleSmartSearch(message);
+            }
+        } catch (Exception e) {
+            log.error("Error executing intent: " + intent.getIntent(), e);
+            return handleError();
+        }
+    }
+    
+    // Inner class cho intent scoring
+    private static class IntentScore {
+        private final String intent;
+        private final double baseScore;
+        private final double weight;
+        
+        public IntentScore(String intent, double baseScore, double weight) {
+            this.intent = intent;
+            this.baseScore = baseScore;
+            this.weight = weight;
         }
         
-        if (containsAny(lowerMessage, MOOD_COLD_PATTERNS)) {
-            return handleMoodCold();
-        }
-        
-        if (containsAny(lowerMessage, MOOD_ENERGY_PATTERNS)) {
-            return handleMoodEnergy();
-        }
-        
-        if (containsAny(lowerMessage, MOOD_RELAX_PATTERNS)) {
-            return handleMoodRelax();
-        }
-        
-        // 1. Chào hỏi
-        if (containsAny(lowerMessage, GREETING_PATTERNS)) {
-            return handleGreeting();
-        }
-        
-        // 2. Tạm biệt
-        if (containsAny(lowerMessage, GOODBYE_PATTERNS)) {
-            return handleGoodbye();
-        }
-        
-        // 3. Cảm ơn
-        if (containsAny(lowerMessage, THANKS_PATTERNS)) {
-            return handleThanks();
-        }
-        
-        // 4. Giúp đỡ
-        if (containsAny(lowerMessage, HELP_PATTERNS)) {
-            return handleHelp();
-        }
-        
-        // 5. Giờ mở cửa
-        if (containsAny(lowerMessage, HOURS_PATTERNS)) {
-            return handleOpeningHours();
-        }
-        
-        // 6. Thanh toán
-        if (containsAny(lowerMessage, PAYMENT_PATTERNS)) {
-            return handlePaymentInfo();
-        }
-        
-        // 7. Giao hàng
-        if (containsAny(lowerMessage, DELIVERY_PATTERNS)) {
-            return handleDeliveryInfo();
-        }
-        
-        // 8. Voucher/Khuyến mãi
-        if (containsAny(lowerMessage, VOUCHER_PATTERNS)) {
-            return handleVoucherQuery();
-        }
-        
-        // 9. Cửa hàng
-        if (containsAny(lowerMessage, STORE_PATTERNS)) {
-            return handleStoreQuery();
-        }
-        
-        // 10. Đơn hàng
-        if (containsAny(lowerMessage, ORDER_PATTERNS) && userId != null) {
-            return handleOrderQuery(userId);
-        }
-        
-        // 11. Gợi ý/Best seller
-        if (containsAny(lowerMessage, RECOMMEND_PATTERNS)) {
-            return handleRecommendation(lowerMessage);
-        }
-        
-        // 12. Danh mục
-        if (containsAny(lowerMessage, CATEGORY_PATTERNS)) {
-            return handleCategoryQuery();
-        }
-        
-        // 13. Hỏi giá (check trước search)
-        if (containsAny(lowerMessage, PRICE_PATTERNS)) {
-            return handlePriceQuery(lowerMessage);
-        }
-        
-        // 14. Tìm kiếm đồ uống cụ thể (trà, cà phê)
-        if (containsAny(lowerMessage, TEA_KEYWORDS)) {
-            return handleDrinkSearch(lowerMessage, "trà");
-        }
-        
-        if (containsAny(lowerMessage, COFFEE_KEYWORDS)) {
-            return handleDrinkSearch(lowerMessage, "cà phê");
-        }
-        
-        // 15. Tìm kiếm chung
-        if (containsAny(lowerMessage, DRINK_SEARCH_PATTERNS)) {
-            return handleDrinkSearch(lowerMessage, null);
-        }
-        
-        // 16. App info
-        if (containsAny(lowerMessage, APP_PATTERNS)) {
-            return handleAppInfo();
-        }
-        
-        // 17. Phàn nàn
-        if (containsAny(lowerMessage, COMPLAINT_PATTERNS)) {
-            return handleComplaint();
-        }
-        
-        // 18. Fallback - thử tìm kiếm theo từ khóa
-        return handleSmartSearch(lowerMessage);
+        public String getIntent() { return intent; }
+        public double getFinalScore() { return baseScore * weight; }
     }
 
-    // ==================== HANDLERS ====================
+    // ==================== ENHANCED HANDLERS ====================
+    
+    private ChatResponse handleEmptyMessage() {
+        return ChatResponse.builder()
+            .message("🤔 Bạn có muốn hỏi gì không?\n\n" +
+                "Tôi có thể giúp bạn:\n" +
+                "• Tìm đồ uống: \"trà sữa\", \"cà phê\"\n" +
+                "• Xem giá: \"giá trà đào\"\n" +
+                "• Khuyến mãi: \"voucher\"\n" +
+                "• Gợi ý: \"món ngon\"\n\n" +
+                "Hãy thử hỏi tôi nhé! 😊")
+            .type("TEXT")
+            .build();
+    }
+    
+    private ChatResponse handleTooLongMessage() {
+        return ChatResponse.builder()
+            .message("😅 Tin nhắn hơi dài rồi bạn ơi!\n\n" +
+                "Bạn có thể hỏi ngắn gọn hơn không?\n" +
+                "Ví dụ: \"tìm trà sữa\" thay vì câu dài 😊")
+            .type("TEXT")
+            .build();
+    }
+    
+    private ChatResponse handleError() {
+        return ChatResponse.builder()
+            .message("😔 Xin lỗi, có lỗi xảy ra!\n\n" +
+                "Bạn thử hỏi lại hoặc liên hệ:\n" +
+                "📞 Hotline: 1900-xxxx\n" +
+                "💬 Fanpage: fb.com/utetea")
+            .type("TEXT")
+            .build();
+    }
     
     private ChatResponse handleGreeting() {
         String timeGreeting = getTimeBasedGreeting();
-        String[] greetings = {
-            timeGreeting + "! 👋 Tôi là trợ lý ảo của UTE Tea.\n\n" +
-                "Tôi có thể giúp bạn:\n" +
-                "🍵 Tìm kiếm đồ uống yêu thích\n" +
-                "💰 Xem giá và khuyến mãi\n" +
-                "📍 Tìm cửa hàng gần bạn\n" +
-                "📦 Kiểm tra đơn hàng\n\n" +
-                "Bạn muốn tôi giúp gì nào? 😊",
-            
-            timeGreeting + "! 🌟 Chào mừng bạn đến với UTE Tea!\n\n" +
-                "Hôm nay bạn muốn thưởng thức gì?\n" +
-                "• Gõ \"menu\" để xem tất cả đồ uống\n" +
-                "• Gõ \"gợi ý\" để xem món hot\n" +
-                "• Gõ \"khuyến mãi\" để xem ưu đãi\n\n" +
-                "Tôi sẵn sàng phục vụ bạn! ☕"
-        };
+        WeatherDto weather = getWeatherData();
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append(timeGreeting).append("! 👋 Tôi là trợ lý ảo của UTE Tea.\n\n");
+        
+        // Thêm thông tin thời tiết nếu có
+        if (weather != null) {
+            sb.append("🌤️ Hôm nay tại ").append(weather.getCity()).append(": ");
+            sb.append(String.format("%.0f°C", weather.getTemperature()));
+            if (weather.getDescription() != null) {
+                sb.append(" - ").append(weather.getDescription());
+            }
+            sb.append("\n\n");
+        }
+        
+        sb.append("Tôi có thể giúp bạn:\n");
+        sb.append("🍵 Tìm kiếm đồ uống yêu thích\n");
+        sb.append("💰 Xem giá và khuyến mãi\n");
+        sb.append("📍 Tìm cửa hàng gần bạn\n");
+        sb.append("🌤️ Gợi ý theo thời tiết\n\n");
+        sb.append("Bạn muốn tôi giúp gì nào? 😊");
+        
         return ChatResponse.builder()
-            .message(greetings[new Random().nextInt(greetings.length)])
+            .message(sb.toString())
             .type("TEXT")
             .build();
     }
@@ -384,10 +490,16 @@ public class ChatbotService {
                 "• \"Xem đơn hàng của tôi\"\n\n" +
                 "⭐ **Gợi ý:**\n" +
                 "• \"Món nào ngon?\" hoặc \"gợi ý đi\"\n\n" +
+                "🌤️ **Gợi ý theo thời tiết:**\n" +
+                "• \"Hôm nay uống gì?\" → Gợi ý theo thời tiết\n" +
+                "• \"Trời nóng quá\" → Đồ mát lạnh\n" +
+                "• \"Trời mưa\" → Đồ ấm nóng\n\n" +
                 "😊 **Gợi ý theo tâm trạng:**\n" +
                 "• \"Hôm nay mệt quá\" → Đồ uống nhẹ nhàng\n" +
-                "• \"Đang vui\" → Món ngọt ngào\n" +
-                "• \"Trời nóng quá\" → Đồ mát lạnh\n\n" +
+                "• \"Đang vui\" → Món ngọt ngào\n\n" +
+                "📏 **Thông tin khác:**\n" +
+                "• \"Size\" → Xem các size\n" +
+                "• \"Topping\" → Xem topping\n\n" +
                 "Hãy thử hỏi tôi bất cứ điều gì! 😊")
             .type("TEXT")
             .build();
@@ -717,6 +829,188 @@ public class ChatbotService {
             .build();
     }
     
+    // ==================== WEATHER-BASED RECOMMENDATION ====================
+    
+    private WeatherDto getWeatherData() {
+        long now = System.currentTimeMillis();
+        if (cachedWeather == null || (now - weatherCacheTime) > WEATHER_CACHE_DURATION) {
+            try {
+                cachedWeather = weatherService.getCurrentWeather();
+                weatherCacheTime = now;
+            } catch (Exception e) {
+                log.warn("Could not fetch weather data: {}", e.getMessage());
+                // Trả về null nếu không lấy được thời tiết
+                return null;
+            }
+        }
+        return cachedWeather;
+    }
+    
+    private ChatResponse handleWeatherRecommendation() {
+        WeatherDto weather = getWeatherData();
+        List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
+        
+        if (drinks.isEmpty()) {
+            return ChatResponse.builder()
+                .message("😅 Xin lỗi, hiện tại chưa có đồ uống nào.")
+                .type("TEXT")
+                .build();
+        }
+        
+        List<Drink> recommended;
+        StringBuilder sb = new StringBuilder();
+        
+        if (weather != null) {
+            double temp = weather.getTemperature();
+            String condition = weather.getCondition();
+            boolean isRainy = condition != null && 
+                (condition.equalsIgnoreCase("Rain") || 
+                 condition.equalsIgnoreCase("Drizzle") ||
+                 condition.equalsIgnoreCase("Thunderstorm"));
+            
+            sb.append("🌤️ **Gợi ý theo thời tiết hôm nay**\n\n");
+            sb.append("📍 ").append(weather.getCity()).append(" - ");
+            sb.append(String.format("%.1f°C", temp));
+            if (weather.getDescription() != null) {
+                sb.append(" (").append(weather.getDescription()).append(")");
+            }
+            sb.append("\n\n");
+            
+            if (isRainy) {
+                sb.append("🌧️ **Trời đang mưa!**\n");
+                sb.append("Một ly đồ uống ấm sẽ rất tuyệt!\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("nóng", "hot", "ấm", "cacao", "gừng", "cà phê"));
+            } else if (temp >= 32) {
+                sb.append("🥵 **Trời nóng quá!**\n");
+                sb.append("Đồ uống mát lạnh là lựa chọn hoàn hảo!\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("đá", "ice", "lạnh", "freeze", "sinh tố", "smoothie", "chanh", "dừa"));
+            } else if (temp >= 28) {
+                sb.append("☀️ **Thời tiết ấm áp!**\n");
+                sb.append("Đây là những món phù hợp cho bạn:\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("trà sữa", "milk tea", "trà đào", "trà vải", "matcha"));
+            } else if (temp < 22) {
+                sb.append("🥶 **Trời se lạnh!**\n");
+                sb.append("Đồ uống nóng sẽ giúp bạn ấm áp hơn!\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("nóng", "hot", "ấm", "cà phê", "cacao", "gừng"));
+            } else {
+                sb.append("🌤️ **Thời tiết dễ chịu!**\n");
+                sb.append("Bạn có thể thưởng thức bất kỳ món nào!\n\n");
+                Collections.shuffle(drinks);
+                recommended = drinks.stream().limit(5).collect(Collectors.toList());
+            }
+        } else {
+            // Fallback khi không có dữ liệu thời tiết - gợi ý theo thời gian
+            int hour = LocalTime.now().getHour();
+            sb.append("☕ **Gợi ý theo thời điểm**\n\n");
+            
+            if (hour < 10) {
+                sb.append("🌅 **Buổi sáng tươi mới!**\n");
+                sb.append("Một ly cà phê hoặc trà để bắt đầu ngày mới:\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("cà phê", "coffee", "trà xanh", "matcha"));
+            } else if (hour < 14) {
+                sb.append("🌞 **Giữa trưa!**\n");
+                sb.append("Đồ uống mát lạnh giải nhiệt:\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("đá", "lạnh", "sinh tố", "trà đào", "trà vải"));
+            } else if (hour < 18) {
+                sb.append("🌤️ **Buổi chiều!**\n");
+                sb.append("Thời điểm hoàn hảo cho trà sữa:\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("trà sữa", "milk tea", "trân châu"));
+            } else {
+                sb.append("🌙 **Buổi tối!**\n");
+                sb.append("Đồ uống nhẹ nhàng thư giãn:\n\n");
+                recommended = filterDrinksByKeywords(drinks, 
+                    Arrays.asList("trà", "thảo mộc", "ít đường", "matcha"));
+            }
+        }
+        
+        // Đảm bảo có ít nhất 5 món
+        if (recommended.isEmpty() || recommended.size() < 3) {
+            Collections.shuffle(drinks);
+            recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        }
+        
+        List<DrinkDto> drinkDtos = recommended.stream()
+            .limit(5)
+            .map(drinkMapper::toDto)
+            .collect(Collectors.toList());
+        
+        sb.append("🧋 **Đồ uống gợi ý:**\n\n");
+        for (Drink d : recommended.stream().limit(5).collect(Collectors.toList())) {
+            sb.append("• **").append(d.getName()).append("** - ")
+              .append(formatPrice(d.getBasePrice())).append("\n");
+        }
+        
+        sb.append("\n💡 Gõ tên món để xem chi tiết và đặt hàng!");
+        
+        return ChatResponse.builder()
+            .message(sb.toString())
+            .type("DRINKS")
+            .data(drinkDtos)
+            .build();
+    }
+    
+    private List<Drink> filterDrinksByKeywords(List<Drink> drinks, List<String> keywords) {
+        List<Drink> filtered = drinks.stream()
+            .filter(d -> {
+                String name = d.getName().toLowerCase();
+                String desc = d.getDescription() != null ? d.getDescription().toLowerCase() : "";
+                return keywords.stream().anyMatch(k -> name.contains(k) || desc.contains(k));
+            })
+            .collect(Collectors.toList());
+        
+        Collections.shuffle(filtered);
+        return filtered.stream().limit(5).collect(Collectors.toList());
+    }
+    
+    private ChatResponse handleSizeInfo() {
+        return ChatResponse.builder()
+            .message("📏 **Thông tin Size đồ uống**\n\n" +
+                "UTE Tea có 3 size cho bạn lựa chọn:\n\n" +
+                "🥤 **Size S (Nhỏ)**\n" +
+                "   • Dung tích: ~350ml\n" +
+                "   • Phù hợp: Uống nhẹ, thử vị mới\n\n" +
+                "🥤 **Size M (Vừa)** ⭐ Phổ biến nhất\n" +
+                "   • Dung tích: ~500ml\n" +
+                "   • Phù hợp: Đa số khách hàng\n\n" +
+                "🥤 **Size L (Lớn)**\n" +
+                "   • Dung tích: ~700ml\n" +
+                "   • Phù hợp: Uống nhiều, chia sẻ\n\n" +
+                "💡 **Tip:** Size M là lựa chọn cân bằng nhất!\n" +
+                "Giá sẽ tăng thêm 5.000đ - 10.000đ cho mỗi size lớn hơn.")
+            .type("TEXT")
+            .build();
+    }
+    
+    private ChatResponse handleToppingInfo() {
+        return ChatResponse.builder()
+            .message("🧋 **Topping UTE Tea**\n\n" +
+                "Thêm topping để đồ uống ngon hơn!\n\n" +
+                "⚫ **Trân châu đen** - 8.000đ\n" +
+                "   Dai giòn, vị đường đen\n\n" +
+                "⚪ **Trân châu trắng** - 8.000đ\n" +
+                "   Mềm dẻo, vị sữa\n\n" +
+                "🟤 **Pudding** - 10.000đ\n" +
+                "   Mềm mịn, béo ngậy\n\n" +
+                "🟢 **Thạch** - 8.000đ\n" +
+                "   Giòn mát, nhiều vị\n\n" +
+                "🧀 **Cheese foam** - 12.000đ\n" +
+                "   Béo mặn, trending!\n\n" +
+                "🖤 **Đường đen** - 5.000đ\n" +
+                "   Ngọt tự nhiên\n\n" +
+                "🟫 **Sương sáo** - 8.000đ\n" +
+                "   Mát lành, giải nhiệt\n\n" +
+                "💡 **Tip:** Combo trân châu + pudding rất được yêu thích!")
+            .type("TEXT")
+            .build();
+    }
+    
     // ==================== OTHER HANDLERS ====================
     
     private ChatResponse handleOpeningHours() {
@@ -828,33 +1122,83 @@ public class ChatbotService {
     private ChatResponse handleRecommendation(String message) {
         List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
         
+        if (drinks.isEmpty()) {
+            return ChatResponse.builder()
+                .message("😅 Xin lỗi, hiện tại chưa có đồ uống nào.")
+                .type("TEXT")
+                .build();
+        }
+        
         // Lọc theo context nếu có
         String context = extractContext(message);
+        List<Drink> filteredDrinks = drinks;
+        
         if (context != null) {
             final String ctx = context;
-            drinks = drinks.stream()
+            filteredDrinks = drinks.stream()
                 .filter(d -> d.getName().toLowerCase().contains(ctx) ||
                             (d.getCategory() != null && 
                              d.getCategory().getName().toLowerCase().contains(ctx)))
                 .collect(Collectors.toList());
         }
         
-        if (drinks.isEmpty()) {
-            return ChatResponse.builder()
-                .message("Xin lỗi, hiện tại chưa có món phù hợp. Bạn thử tìm món khác nhé!")
-                .type("TEXT")
-                .build();
+        // Nếu không có filter hoặc filter rỗng, thử gợi ý theo thời tiết
+        if (filteredDrinks.isEmpty() || context == null) {
+            WeatherDto weather = getWeatherData();
+            if (weather != null) {
+                double temp = weather.getTemperature();
+                String condition = weather.getCondition();
+                boolean isRainy = condition != null && 
+                    (condition.equalsIgnoreCase("Rain") || 
+                     condition.equalsIgnoreCase("Drizzle") ||
+                     condition.equalsIgnoreCase("Thunderstorm"));
+                
+                List<String> keywords;
+                if (isRainy) {
+                    keywords = Arrays.asList("nóng", "hot", "ấm", "cacao", "gừng");
+                } else if (temp >= 32) {
+                    keywords = Arrays.asList("đá", "ice", "lạnh", "freeze", "sinh tố", "chanh");
+                } else if (temp >= 28) {
+                    keywords = Arrays.asList("trà sữa", "milk tea", "trà đào", "matcha");
+                } else if (temp < 22) {
+                    keywords = Arrays.asList("nóng", "hot", "ấm", "cà phê");
+                } else {
+                    keywords = Arrays.asList("trà sữa", "trà đào", "cà phê");
+                }
+                
+                filteredDrinks = filterDrinksByKeywords(drinks, keywords);
+            }
+        }
+        
+        // Fallback: random từ tất cả
+        if (filteredDrinks.isEmpty()) {
+            filteredDrinks = new ArrayList<>(drinks);
         }
         
         // Random 5 món làm "best seller"
-        Collections.shuffle(drinks);
-        List<Drink> recommended = drinks.stream().limit(5).collect(Collectors.toList());
+        Collections.shuffle(filteredDrinks);
+        List<Drink> recommended = filteredDrinks.stream().limit(5).collect(Collectors.toList());
         
         List<DrinkDto> drinkDtos = recommended.stream()
             .map(drinkMapper::toDto)
             .collect(Collectors.toList());
         
-        StringBuilder sb = new StringBuilder("🔥 **Món hot được yêu thích!**\n\n");
+        StringBuilder sb = new StringBuilder();
+        
+        // Thêm thông tin thời tiết nếu có
+        WeatherDto weather = getWeatherData();
+        if (weather != null) {
+            sb.append("🔥 **Món hot hôm nay!**\n");
+            sb.append("📍 ").append(weather.getCity()).append(" - ");
+            sb.append(String.format("%.0f°C", weather.getTemperature()));
+            if (weather.getDescription() != null) {
+                sb.append(" (").append(weather.getDescription()).append(")");
+            }
+            sb.append("\n\n");
+        } else {
+            sb.append("🔥 **Món hot được yêu thích!**\n\n");
+        }
+        
         for (int i = 0; i < recommended.size(); i++) {
             Drink d = recommended.get(i);
             sb.append(getMedalEmoji(i + 1))
