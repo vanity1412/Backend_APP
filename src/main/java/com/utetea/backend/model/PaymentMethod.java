@@ -6,7 +6,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
 public enum PaymentMethod {
     COD,
     VNPAY,
-    VIETQR;
+    VIETQR,
+    MOMO;
     
     @JsonValue
     public String getValue() {

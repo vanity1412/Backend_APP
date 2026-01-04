@@ -68,10 +68,15 @@ public class SecurityConfig {
                         .requestMatchers("/api/weather/**").permitAll()
                         .requestMatchers("/assets/**").permitAll()
                         
-                        // VNPAY endpoints
+                        // Payment Gateway endpoints - callbacks must be public
                         .requestMatchers("/api/vnpay/callback").permitAll()
+                        .requestMatchers("/api/vnpay/callback-api").permitAll()
                         .requestMatchers("/api/vnpay/test-config").permitAll()
                         .requestMatchers("/api/vnpay/test-payment-url").permitAll()
+                        .requestMatchers("/api/momo/callback").permitAll()
+                        .requestMatchers("/api/zalopay/callback").permitAll()
+                        .requestMatchers("/api/paypal/success").permitAll()
+                        .requestMatchers("/api/paypal/cancel").permitAll()
                         
                         // WebSocket endpoints
                         .requestMatchers("/ws/**").permitAll()
@@ -101,6 +106,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/vnpay/create-payment").hasAnyRole("USER", "MANAGER", "ADMIN")
                         .requestMatchers("/api/vnpay/create-payment-amount").hasAnyRole("USER", "MANAGER", "ADMIN")
                         .requestMatchers("/api/vnpay/create-order-after-payment").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/momo/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/zalopay/**").hasAnyRole("USER", "MANAGER", "ADMIN")
+                        .requestMatchers("/api/paypal/**").hasAnyRole("USER", "MANAGER", "ADMIN")
                         
                         // Review endpoints - public for reading, authenticated for writing
                         .requestMatchers("/api/reviews/drink/**").permitAll()

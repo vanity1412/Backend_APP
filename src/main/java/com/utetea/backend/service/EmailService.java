@@ -142,8 +142,7 @@ public class EmailService {
         }
         
         content.append("<p><strong>Phương thức thanh toán:</strong> ");
-        content.append(order.getPaymentMethod() == com.utetea.backend.model.PaymentMethod.COD ? "Tiền mặt" : 
-                      order.getPaymentMethod() == com.utetea.backend.model.PaymentMethod.VNPAY ? "VNPay" : "Khác");
+        content.append(getPaymentMethodDisplayName(order.getPaymentMethod()));
         content.append("</p>");
         content.append("<p><strong>Trạng thái:</strong> <span style='color: #FF9800;'>Đang chờ xử lý</span></p>");
         content.append("</div>");
@@ -260,8 +259,7 @@ public class EmailService {
         }
         
         content.append("<p><strong>Phương thức thanh toán:</strong> ");
-        content.append(order.getPaymentMethod() == com.utetea.backend.model.PaymentMethod.COD ? "Tiền mặt" : 
-                      order.getPaymentMethod() == com.utetea.backend.model.PaymentMethod.VNPAY ? "VNPay" : "Khác");
+        content.append(getPaymentMethodDisplayName(order.getPaymentMethod()));
         content.append("</p>");
         content.append("</div>");
         
@@ -334,5 +332,19 @@ public class EmailService {
     
     private String formatPrice(BigDecimal price) {
         return String.format("%,d VND", price.longValue());
+    }
+    
+    /**
+     * Lấy tên hiển thị của phương thức thanh toán
+     */
+    private String getPaymentMethodDisplayName(com.utetea.backend.model.PaymentMethod paymentMethod) {
+        if (paymentMethod == null) return "Khác";
+        switch (paymentMethod) {
+            case COD: return "Tiền mặt";
+            case VNPAY: return "VNPay";
+            case VIETQR: return "VietQR";
+            case MOMO: return "MoMo";
+            default: return "Khác";
+        }
     }
 }
