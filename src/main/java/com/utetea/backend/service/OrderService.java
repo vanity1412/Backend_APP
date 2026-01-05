@@ -41,6 +41,180 @@ public class OrderService {
     private final MemberTierService memberTierService;
     private final RateLimitService rateLimitService;
     private final UserMonitoringService userMonitoringService;
+    private final ChallengeService challengeService;
+
+    /**
+     * Preview bill trước khi thanh toán
+     * Tính toán chi tiết đơn hàng, giá tiền, giảm giá để user xem trước
+     */
+    @Transactional(readOnly = true)
+    public BillPreviewDto previewBill(String username, OrderRequest request) {
+        log.info("Generating bill preview for user: {}", username);
+        
+        // Validate request
+        validateOrderRequest(request);
+        
+        // Get user info
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
+        
+        // Get store info
+        Store store = storeRepository.findById(request.getStoreId())
+                .orElseThrow(() -> new ResourceNotFoundException("Store", "id", request.getStoreId()));
+        
+        // Calculate items
+        List<BillPreviewDto.BillItemDto> billItems = new java.util.ArrayList<>();
+        BigDecimal subtotal = BigDecimal.ZERO;
+        
+        for (OrderItemRequest itemReq : request.getItems()) {
+            Drink drink = drinkRepository.findById(itemReq.getDrinkId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Drink", "id", itemReq.getDrinkId()));
+            
+            if (!drink.getIsActive()) {
+                throw new BusinessException("Drink '" + drink.getName() + "' is not available");
+            }
+            
+            BigDecimal unitPrice = drink.getBasePrice();
+            
+            // Add size price
+            List<DrinkSize> sizes = drinkSizeRepository.findByDrinkId(drink.getId());
+            if (!sizes.isEmpty()) {
+                boolean sizeFound = false;
+                for (DrinkSize size : sizes) {
+                    if (size.getSizeName().equals(itemReq.getSizeName())) {
+                        unitPrice = unitPrice.add(size.getExtraPrice());
+                        sizeFound = true;
+                        break;
+                    }
+                }
+                if (!sizeFound) {
+                    throw new BusinessException("Size '" + itemReq.getSizeName() + "' not available for drink '" + drink.getName() + "'");
+                }
+            }
+            
+            // Add toppings
+            List<String> toppingNames = new java.util.ArrayList<>();
+            if (itemReq.getToppingIds() != null && !itemReq.getToppingIds().isEmpty()) {
+                for (Long toppingId : itemReq.getToppingIds()) {
+                    DrinkTopping topping = drinkToppingRepository.findByIdWithDrink(toppingId)
+                            .orElseThrow(() -> new ResourceNotFoundException("Topping", "id", toppingId));
+                    
+                    if (topping.getDrink() != null && !topping.getDrink().getId().equals(drink.getId())) {
+                        throw new BusinessException("Topping '" + topping.getToppingName() + "' không thuộc về drink '" + drink.getName() + "'");
+                    }
+                    
+                    if (!topping.getIsActive()) {
+                        throw new BusinessException("Topping '" + topping.getToppingName() + "' is not available");
+                    }
+                    
+                    unitPrice = unitPrice.add(topping.getPrice());
+                    toppingNames.add(topping.getToppingName());
+                }
+            }
+            
+            BigDecimal itemTotal = unitPrice.multiply(BigDecimal.valueOf(itemReq.getQuantity()));
+            subtotal = subtotal.add(itemTotal);
+            
+            billItems.add(BillPreviewDto.BillItemDto.builder()
+                    .drinkName(drink.getName())
+                    .drinkImage(drink.getImageUrl())
+                    .sizeName(itemReq.getSizeName())
+                    .toppings(toppingNames)
+                    .quantity(itemReq.getQuantity())
+                    .unitPrice(unitPrice)
+                    .totalPrice(itemTotal)
+                    .note(itemReq.getNote())
+                    .build());
+        }
+        
+        // Calculate discount
+        BigDecimal discount = BigDecimal.ZERO;
+        String promotionCode = null;
+        String tierDiscountInfo = null;
+        
+        // Check spin voucher
+        if (request.getSpinVoucherCode() != null && !request.getSpinVoucherCode().isEmpty()) {
+            SpinReward spinReward = spinRewardRepository.findByVoucherCode(request.getSpinVoucherCode().toUpperCase())
+                    .orElse(null);
+            
+            if (spinReward != null && !spinReward.getIsUsed()) {
+                discount = subtotal.multiply(BigDecimal.valueOf(spinReward.getDiscountPercent()))
+                        .divide(BigDecimal.valueOf(100));
+                promotionCode = "SPIN: " + spinReward.getVoucherCode() + " (-" + spinReward.getDiscountPercent() + "%)";
+            }
+        }
+        // Check promotion code
+        else if (request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
+            Promotion promotion = promotionRepository.findByCode(request.getPromotionCode())
+                    .orElse(null);
+            
+            if (promotion != null && promotion.getIsActive()) {
+                LocalDateTime now = LocalDateTime.now();
+                if (!promotion.getStartDate().isAfter(now) && !promotion.getEndDate().isBefore(now)) {
+                    if (subtotal.compareTo(promotion.getMinOrderValue()) >= 0) {
+                        if (promotion.getDiscountType() == DiscountType.PERCENT) {
+                            discount = subtotal.multiply(promotion.getDiscountValue()).divide(BigDecimal.valueOf(100));
+                            if (promotion.getMaxDiscountAmount() != null && discount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
+                                discount = promotion.getMaxDiscountAmount();
+                            }
+                        } else {
+                            discount = promotion.getDiscountValue();
+                        }
+                        promotionCode = promotion.getCode();
+                    }
+                }
+            }
+        }
+        
+        // Calculate tier discount
+        BigDecimal tierDiscount = memberTierService.calculateTierDiscount(user.getMemberTier(), subtotal);
+        if (tierDiscount.compareTo(BigDecimal.ZERO) > 0) {
+            discount = discount.add(tierDiscount);
+            tierDiscountInfo = user.getMemberTier().name() + " (-" + formatPrice(tierDiscount) + ")";
+        }
+        
+        BigDecimal finalPrice = subtotal.subtract(discount);
+        if (finalPrice.compareTo(BigDecimal.ZERO) < 0) {
+            finalPrice = BigDecimal.ZERO;
+        }
+        
+        // Build response
+        return BillPreviewDto.builder()
+                .customerName(user.getFullName())
+                .customerPhone(user.getPhone())
+                .customerEmail(user.getEmail())
+                .storeId(store.getId())
+                .storeName(store.getStoreName())
+                .storeAddress(store.getAddress())
+                .orderType(request.getType().name())
+                .deliveryAddress(request.getType() == OrderType.DELIVERY ? request.getAddress() : "Tại Cửa Hàng")
+                .pickupTime(request.getPickupTime() != null ? 
+                        request.getPickupTime().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) : null)
+                .paymentMethod(getPaymentMethodDisplayName(request.getPaymentMethod()))
+                .items(billItems)
+                .subtotal(subtotal)
+                .discount(discount)
+                .promotionCode(promotionCode)
+                .tierDiscount(tierDiscountInfo)
+                .finalPrice(finalPrice)
+                .build();
+    }
+    
+    private String formatPrice(BigDecimal price) {
+        return String.format("%,d VND", price.longValue());
+    }
+    
+    private String getPaymentMethodDisplayName(PaymentMethod paymentMethod) {
+        if (paymentMethod == null) return "Khác";
+        switch (paymentMethod) {
+            case COD: return "Tiền mặt";
+            case VNPAY: return "VNPay";
+            case VIETQR: return "VietQR";
+            case MOMO: return "MoMo";
+            case PAYPAL: return "PayPal";
+            default: return "Khác";
+        }
+    }
 
     @Transactional
     public OrderDto createOrder(String username, OrderRequest request) {
@@ -405,6 +579,17 @@ public class OrderService {
                 emailService.sendOrderCompletionEmail(order);
             } catch (Exception e) {
                 log.error("Failed to send completion email", e);
+            }
+            
+            // 🎯 Xử lý Challenge - Mua 3 sản phẩm giống nhau được cộng 5 điểm
+            try {
+                var completions = challengeService.processOrderChallenges(order);
+                if (!completions.isEmpty()) {
+                    log.info("🎯 User {} completed {} challenge(s) from order #{}",
+                            order.getUser().getUsername(), completions.size(), orderId);
+                }
+            } catch (Exception e) {
+                log.error("Failed to process challenges for order #{}", orderId, e);
             }
         }
 

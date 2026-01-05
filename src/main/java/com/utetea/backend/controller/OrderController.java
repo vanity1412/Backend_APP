@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.utetea.backend.dto.ApiResponse;
+import com.utetea.backend.dto.BillPreviewDto;
 import com.utetea.backend.dto.OrderDto;
 import com.utetea.backend.dto.OrderRequest;
 import com.utetea.backend.exception.ResourceNotFoundException;
@@ -66,6 +67,19 @@ public class OrderController {
         if (!isManager && !isOwner) {
             throw new AccessDeniedException("Bạn không có quyền truy cập đơn hàng của người khác");
         }
+    }
+    
+    /**
+     * Preview bill trước khi thanh toán
+     * User xem chi tiết đơn hàng, giá tiền, giảm giá trước khi xác nhận
+     */
+    @PostMapping("/preview")
+    public ResponseEntity<ApiResponse<BillPreviewDto>> previewBill(
+            Authentication authentication,
+            @Valid @RequestBody OrderRequest request) {
+        String username = authentication.getName();
+        BillPreviewDto billPreview = orderService.previewBill(username, request);
+        return ResponseEntity.ok(ApiResponse.success("Bill preview generated", billPreview));
     }
     
     @PostMapping

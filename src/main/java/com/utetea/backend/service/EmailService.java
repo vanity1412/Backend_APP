@@ -133,6 +133,10 @@ public class EmailService {
         // Order Info
         content.append("<div class='order-info'>");
         content.append("<h3>Thông tin đơn hàng #").append(order.getId()).append("</h3>");
+        content.append("<p><strong>Khách hàng:</strong> ").append(order.getUser().getFullName()).append("</p>");
+        if (order.getUser().getPhone() != null && !order.getUser().getPhone().isEmpty()) {
+            content.append("<p><strong>Số điện thoại:</strong> ").append(order.getUser().getPhone()).append("</p>");
+        }
         content.append("<p><strong>Cửa hàng:</strong> ").append(order.getStore().getStoreName()).append("</p>");
         content.append("<p><strong>Loại đơn:</strong> ").append(order.getType() == com.utetea.backend.model.OrderType.DELIVERY ? "Giao hàng" : "Lấy tại cửa hàng").append("</p>");
         content.append("<p><strong>Địa chỉ:</strong> ").append(order.getAddress()).append("</p>");
@@ -250,6 +254,10 @@ public class EmailService {
         // Order Info
         content.append("<div class='order-info'>");
         content.append("<h3>Thông tin đơn hàng #").append(order.getId()).append("</h3>");
+        content.append("<p><strong>Khách hàng:</strong> ").append(order.getUser().getFullName()).append("</p>");
+        if (order.getUser().getPhone() != null && !order.getUser().getPhone().isEmpty()) {
+            content.append("<p><strong>Số điện thoại:</strong> ").append(order.getUser().getPhone()).append("</p>");
+        }
         content.append("<p><strong>Cửa hàng:</strong> ").append(order.getStore().getStoreName()).append("</p>");
         content.append("<p><strong>Loại đơn:</strong> ").append(order.getType() == com.utetea.backend.model.OrderType.DELIVERY ? "Giao hàng" : "Lấy tại cửa hàng").append("</p>");
         content.append("<p><strong>Địa chỉ:</strong> ").append(order.getAddress()).append("</p>");
@@ -434,6 +442,10 @@ public class EmailService {
         // Order Info
         content.append("<div class='order-info'>");
         content.append("<h3>📦 Thông tin đơn hàng</h3>");
+        content.append("<p><strong>Khách hàng:</strong> ").append(order.getUser().getFullName()).append("</p>");
+        if (order.getUser().getPhone() != null && !order.getUser().getPhone().isEmpty()) {
+            content.append("<p><strong>Số điện thoại:</strong> ").append(order.getUser().getPhone()).append("</p>");
+        }
         content.append("<p><strong>Cửa hàng:</strong> ").append(order.getStore().getStoreName()).append("</p>");
         content.append("<p><strong>Loại đơn:</strong> ").append(order.getType() == com.utetea.backend.model.OrderType.DELIVERY ? "Giao hàng" : "Lấy tại cửa hàng").append("</p>");
         if (order.getAddress() != null && !order.getAddress().isEmpty()) {
