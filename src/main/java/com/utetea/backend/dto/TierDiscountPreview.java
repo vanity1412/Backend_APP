@@ -17,4 +17,9 @@ public class TierDiscountPreview {
     private BigDecimal tierDiscount;
     private BigDecimal finalTotal;
     private String message;
+    
+    // Free shipping info
+    private boolean eligibleForFreeShipping;      // Có đủ điều kiện free ship không
+    private BigDecimal freeShippingMinOrder;      // Đơn tối thiểu để được free ship
+    private String freeShippingMessage;           // Thông báo về free ship
 }

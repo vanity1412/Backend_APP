@@ -172,25 +172,43 @@ public class OrderService {
         
         // Calculate shipping fee - Ưu tiên từ client, nếu không có thì tính từ GHN
         BigDecimal shippingFee = BigDecimal.ZERO;
+        BigDecimal originalShippingFee = BigDecimal.ZERO; // Phí ship gốc trước khi áp dụng free ship
         Integer ghnDistrictId = request.getGhnDistrictId();
         String ghnWardCode = request.getGhnWardCode();
+        boolean isFreeShipping = false;
+        String freeShippingReason = null;
         
         // Ưu tiên sử dụng shippingFee từ client (đã tính sẵn)
         if (request.getShippingFee() != null && request.getShippingFee() > 0) {
-            shippingFee = BigDecimal.valueOf(request.getShippingFee());
-            log.info("Using client shipping fee: {} VND", shippingFee);
+            originalShippingFee = BigDecimal.valueOf(request.getShippingFee());
+            log.info("Using client shipping fee: {} VND", originalShippingFee);
         }
         // Nếu không có, tính từ GHN
         else if (request.getType() == OrderType.DELIVERY && ghnDistrictId != null && ghnWardCode != null) {
             try {
                 int fee = ghnService.getShippingFeeWithInsurance(ghnDistrictId, ghnWardCode, subtotal.intValue());
-                shippingFee = BigDecimal.valueOf(fee);
+                originalShippingFee = BigDecimal.valueOf(fee);
                 log.info("Calculated shipping fee from GHN: {} VND for district {} ward {}", fee, ghnDistrictId, ghnWardCode);
             } catch (Exception e) {
                 log.warn("Failed to calculate shipping fee from GHN: {}", e.getMessage());
                 // Không throw exception, để user vẫn có thể đặt hàng
-                shippingFee = BigDecimal.ZERO;
+                originalShippingFee = BigDecimal.ZERO;
             }
+        }
+        
+        // 🚚 Kiểm tra free ship theo hạng thành viên
+        if (request.getType() == OrderType.DELIVERY && originalShippingFee.compareTo(BigDecimal.ZERO) > 0) {
+            if (memberTierService.isEligibleForFreeShipping(user.getMemberTier(), subtotal)) {
+                isFreeShipping = true;
+                shippingFee = BigDecimal.ZERO;
+                freeShippingReason = "Miễn phí ship cho hạng " + user.getMemberTier().name();
+                log.info("Free shipping applied for user {} with tier {} (order total: {})", 
+                        username, user.getMemberTier(), subtotal);
+            } else {
+                shippingFee = originalShippingFee;
+            }
+        } else {
+            shippingFee = originalShippingFee;
         }
         
         // Total discount
@@ -217,8 +235,11 @@ public class OrderService {
                 .items(billItems)
                 .subtotal(subtotal)
                 .shippingFee(shippingFee)
+                .originalShippingFee(originalShippingFee)
                 .ghnDistrictId(ghnDistrictId)
                 .ghnWardCode(ghnWardCode)
+                .freeShipping(isFreeShipping)
+                .freeShippingReason(freeShippingReason)
                 .promotionCode(promotionCode)
                 .voucherDiscount(voucherDiscount)
                 .tierName(tierName)
@@ -439,13 +460,29 @@ public class OrderService {
 
         order.setDiscount(discount);
         
-        // Set shipping fee từ client (nếu có)
+        // Set shipping fee - Kiểm tra free ship theo hạng thành viên
         BigDecimal shippingFee = BigDecimal.ZERO;
+        BigDecimal originalShippingFee = BigDecimal.ZERO;
+        
         if (request.getShippingFee() != null && request.getShippingFee() > 0) {
-            shippingFee = BigDecimal.valueOf(request.getShippingFee());
-            order.setShippingFee(shippingFee);
-            log.info("Applied shipping fee: {} VND", shippingFee);
+            originalShippingFee = BigDecimal.valueOf(request.getShippingFee());
         }
+        
+        // 🚚 Kiểm tra free ship theo hạng thành viên
+        if (request.getType() == OrderType.DELIVERY && originalShippingFee.compareTo(BigDecimal.ZERO) > 0) {
+            if (memberTierService.isEligibleForFreeShipping(user.getMemberTier(), totalPrice)) {
+                shippingFee = BigDecimal.ZERO;
+                log.info("Free shipping applied for user {} with tier {} (order total: {})", 
+                        username, user.getMemberTier(), totalPrice);
+            } else {
+                shippingFee = originalShippingFee;
+            }
+        } else {
+            shippingFee = originalShippingFee;
+        }
+        
+        order.setShippingFee(shippingFee);
+        log.info("Applied shipping fee: {} VND (original: {} VND)", shippingFee, originalShippingFee);
         
         // Final price = totalPrice + shippingFee - discount
         BigDecimal finalPrice = totalPrice.add(shippingFee).subtract(discount);

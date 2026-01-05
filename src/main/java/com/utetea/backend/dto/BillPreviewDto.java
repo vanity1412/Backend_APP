@@ -30,9 +30,12 @@ public class BillPreviewDto {
     private BigDecimal subtotal;            // Tổng tiền hàng
     
     // Phí giao hàng (GHN)
-    private BigDecimal shippingFee;         // Phí giao hàng
+    private BigDecimal shippingFee;         // Phí giao hàng (sau khi áp dụng free ship)
+    private BigDecimal originalShippingFee; // Phí giao hàng gốc (trước khi áp dụng free ship)
     private Integer ghnDistrictId;          // District ID cho GHN
     private String ghnWardCode;             // Ward code cho GHN
+    private boolean freeShipping;           // Có được miễn phí ship không
+    private String freeShippingReason;      // Lý do miễn phí ship (VD: "Miễn phí ship cho hạng GOLD")
     
     // Chi tiết giảm giá
     private String promotionCode;           // Mã voucher (nếu có)

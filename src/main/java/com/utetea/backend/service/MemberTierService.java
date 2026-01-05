@@ -147,6 +147,10 @@ public class MemberTierService {
         BigDecimal tierDiscount = calculateTierDiscount(tier, total);
         BigDecimal finalTotal = total.subtract(tierDiscount);
         
+        // Check free shipping eligibility
+        boolean eligibleForFreeShipping = isEligibleForFreeShipping(tier, total);
+        BigDecimal freeShippingMinOrder = benefits.getFreeShippingMinOrder();
+        
         String message;
         if (tierDiscount.compareTo(BigDecimal.ZERO) > 0) {
             message = String.format("Bạn được giảm %d%% (-%s VND) với hạng %s", 
@@ -157,6 +161,22 @@ public class MemberTierService {
             message = "Nâng hạng để được giảm giá!";
         }
         
+        // Free shipping message
+        String freeShippingMessage;
+        if (eligibleForFreeShipping) {
+            freeShippingMessage = "🎉 Bạn được miễn phí ship với hạng " + benefits.getTierName();
+        } else if (benefits.isFreeShipping()) {
+            BigDecimal amountNeeded = freeShippingMinOrder.subtract(total);
+            if (amountNeeded.compareTo(BigDecimal.ZERO) > 0) {
+                freeShippingMessage = String.format("Mua thêm %s VND để được miễn phí ship", 
+                        String.format("%,.0f", amountNeeded));
+            } else {
+                freeShippingMessage = "Bạn được miễn phí ship!";
+            }
+        } else {
+            freeShippingMessage = "Nâng hạng để được miễn phí ship!";
+        }
+        
         return TierDiscountPreview.builder()
                 .tier(tier)
                 .tierName(benefits.getTierName())
@@ -165,6 +185,9 @@ public class MemberTierService {
                 .tierDiscount(tierDiscount)
                 .finalTotal(finalTotal)
                 .message(message)
+                .eligibleForFreeShipping(eligibleForFreeShipping)
+                .freeShippingMinOrder(freeShippingMinOrder)
+                .freeShippingMessage(freeShippingMessage)
                 .build();
     }
     

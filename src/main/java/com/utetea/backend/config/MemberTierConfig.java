@@ -49,14 +49,14 @@ public class MemberTierConfig {
                 .maxPoints(149)
                 .discountPercent(new BigDecimal("5"))
                 .pointsMultiplier(1.5)
-                .freeShipping(false)
-                .freeShippingMinOrder(new BigDecimal("100000"))
+                .freeShipping(true)  // Bật free ship cho SILVER
+                .freeShippingMinOrder(new BigDecimal("100000"))  // Free ship đơn từ 100K
                 .birthdayVoucher(true)
                 .birthdayVoucherPercent(10)
                 .prioritySupport(false)
                 .exclusiveOffers(false)
                 .earlyAccess(false)
-                .description("Giảm 5% mọi đơn hàng + Voucher sinh nhật 10%")
+                .description("Giảm 5% + Freeship đơn từ 100K + Voucher sinh nhật 10%")
                 .nextTierPoints(150)
                 .build());
         
