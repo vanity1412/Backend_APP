@@ -12,6 +12,8 @@ import com.utetea.backend.repository.DrinkSizeRepository;
 import com.utetea.backend.repository.DrinkToppingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import static com.utetea.backend.config.CacheConfig.DRINKS_CACHE;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +39,7 @@ public class DrinkService {
      * sau đó batch load toppings
      */
     @Transactional(readOnly = true)
+    @Cacheable(value = DRINKS_CACHE, key = "'all-active'")
     public List<DrinkDto> getAllActiveDrinks() {
         // Query 1: Load drinks với sizes và category (JOIN FETCH)
         List<Drink> drinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory();
@@ -77,6 +82,7 @@ public class DrinkService {
     }
     
     @Transactional(readOnly = true)
+    @Cacheable(value = DRINKS_CACHE, key = "'drink-' + #id")
     public DrinkDto getDrinkById(Long id) {
         Drink drink = drinkRepository.findByIdWithSizesAndCategory(id)
             .orElseThrow(() -> new ResourceNotFoundException("Drink", "id", id));
@@ -119,6 +125,7 @@ public class DrinkService {
     }
     
     @Transactional
+    @CacheEvict(value = DRINKS_CACHE, allEntries = true)
     public DrinkDto createDrink(DrinkDto dto) {
         Drink drink = new Drink();
         drink.setName(dto.getName());
@@ -132,6 +139,7 @@ public class DrinkService {
     }
     
     @Transactional
+    @CacheEvict(value = DRINKS_CACHE, allEntries = true)
     public DrinkDto updateDrink(Long id, DrinkDto dto) {
         Drink drink = drinkRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Drink", "id", id));
@@ -147,6 +155,7 @@ public class DrinkService {
     }
     
     @Transactional
+    @CacheEvict(value = DRINKS_CACHE, allEntries = true)
     public void deleteDrink(Long id) {
         Drink drink = drinkRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Drink", "id", id));

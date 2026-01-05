@@ -10,11 +10,14 @@ import com.utetea.backend.repository.StoreRepository;
 import com.utetea.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static com.utetea.backend.config.CacheConfig.STORES_CACHE;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +28,7 @@ public class StoreService {
     private final UserRepository userRepository;
     
     @Transactional(readOnly = true)
+    @Cacheable(value = STORES_CACHE, key = "'all'")
     public List<StoreDto> getAllStores() {
         log.debug("Fetching all stores");
         List<StoreDto> stores = storeRepository.findAll().stream()

@@ -7,11 +7,15 @@ import com.utetea.backend.model.DrinkCategory;
 import com.utetea.backend.repository.DrinkCategoryRepository;
 import com.utetea.backend.repository.DrinkRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static com.utetea.backend.config.CacheConfig.CATEGORIES_CACHE;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +27,7 @@ public class DrinkCategoryService {
     private final DrinkService drinkService;
     
     @Transactional(readOnly = true)
+    @Cacheable(value = CATEGORIES_CACHE, key = "'all-active'")
     public List<DrinkCategoryDto> getAllActiveCategories() {
         return categoryRepository.findByIsActiveTrueOrderByDisplayOrderAsc()
                 .stream()
@@ -31,6 +36,7 @@ public class DrinkCategoryService {
     }
     
     @Transactional(readOnly = true)
+    @Cacheable(value = CATEGORIES_CACHE, key = "'all'")
     public List<DrinkCategoryDto> getAllCategories() {
         return categoryRepository.findAllByOrderByDisplayOrderAsc()
                 .stream()
@@ -58,6 +64,7 @@ public class DrinkCategoryService {
     }
     
     @Transactional
+    @CacheEvict(value = CATEGORIES_CACHE, allEntries = true)
     public DrinkCategoryDto createCategory(DrinkCategoryDto dto) {
         DrinkCategory category = categoryMapper.toEntity(dto);
         category.setId(null);
@@ -66,6 +73,7 @@ public class DrinkCategoryService {
     }
     
     @Transactional
+    @CacheEvict(value = CATEGORIES_CACHE, allEntries = true)
     public DrinkCategoryDto updateCategory(Long id, DrinkCategoryDto dto) {
         DrinkCategory category = categoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Category not found with id: " + id));
@@ -81,6 +89,7 @@ public class DrinkCategoryService {
     }
     
     @Transactional
+    @CacheEvict(value = CATEGORIES_CACHE, allEntries = true)
     public void deleteCategory(Long id) {
         DrinkCategory category = categoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Category not found with id: " + id));

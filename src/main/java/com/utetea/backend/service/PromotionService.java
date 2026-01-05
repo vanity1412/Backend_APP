@@ -15,6 +15,8 @@ import com.utetea.backend.repository.PromotionUsageRepository;
 import com.utetea.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static com.utetea.backend.config.CacheConfig.PROMOTIONS_CACHE;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +41,7 @@ public class PromotionService {
     // ========== USER APIs ==========
     
     @Transactional(readOnly = true)
+    @Cacheable(value = PROMOTIONS_CACHE, key = "'all-active'")
     public List<PromotionDto> getAllActivePromotions() {
         return promotionRepository.findByIsActiveTrueAndEndDateAfter(LocalDateTime.now())
                 .stream()
@@ -161,6 +166,7 @@ public class PromotionService {
     }
     
     @Transactional
+    @CacheEvict(value = PROMOTIONS_CACHE, allEntries = true)
     public PromotionDto createPromotion(CreatePromotionRequest request) {
         log.info("Creating new promotion with code: {}", request.getCode());
         
@@ -216,6 +222,7 @@ public class PromotionService {
     }
     
     @Transactional
+    @CacheEvict(value = PROMOTIONS_CACHE, allEntries = true)
     public PromotionDto updatePromotion(Long id, UpdatePromotionRequest request) {
         log.info("Updating promotion with id: {}", id);
         
@@ -275,6 +282,7 @@ public class PromotionService {
     }
     
     @Transactional
+    @CacheEvict(value = PROMOTIONS_CACHE, allEntries = true)
     public void deletePromotion(Long id) {
         log.info("Deleting promotion with id: {}", id);
         
@@ -297,6 +305,7 @@ public class PromotionService {
     }
     
     @Transactional
+    @CacheEvict(value = PROMOTIONS_CACHE, allEntries = true)
     public PromotionDto togglePromotionStatus(Long id) {
         log.info("Toggling promotion status with id: {}", id);
         
