@@ -57,14 +57,14 @@ public class OrderController {
     
     /**
      * Verify user có quyền truy cập resource của userId không
-     * Manager có thể xem tất cả, User chỉ xem của mình
+     * Manager/Admin có thể xem tất cả, User chỉ xem của mình
      */
     private void verifyUserAccessOrManager(Authentication authentication, Long userId) {
         User currentUser = getAuthenticatedUser(authentication);
-        boolean isManager = currentUser.getRole() == UserRole.MANAGER;
+        boolean isManagerOrAdmin = currentUser.getRole() == UserRole.MANAGER || currentUser.getRole() == UserRole.ADMIN;
         boolean isOwner = currentUser.getId().equals(userId);
         
-        if (!isManager && !isOwner) {
+        if (!isManagerOrAdmin && !isOwner) {
             throw new AccessDeniedException("Bạn không có quyền truy cập đơn hàng của người khác");
         }
     }
@@ -134,7 +134,7 @@ public class OrderController {
     }
     
     @GetMapping("/all")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Page<OrderDto>>> getAllOrders(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
@@ -143,7 +143,7 @@ public class OrderController {
     }
     
     @PutMapping("/{orderId}/status")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<OrderDto>> updateOrderStatus(
             @PathVariable Long orderId,
             @RequestParam OrderStatus status) {
