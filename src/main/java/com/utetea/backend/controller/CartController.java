@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.utetea.backend.dto.AddToCartRequest;
 import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.CartDto;
+import com.utetea.backend.dto.UpdateCartItemRequest;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.User;
 import com.utetea.backend.repository.UserRepository;
@@ -97,6 +98,17 @@ public class CartController {
             @RequestParam Integer quantity) {
         User user = getAuthenticatedUser(authentication);
         CartDto cart = cartService.updateCartItemQuantity(user.getId(), cartItemId, quantity);
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật giỏ hàng", cart));
+    }
+    
+    @PutMapping("/items/{cartItemId}/full")
+    @Operation(summary = "Cập nhật đầy đủ thông tin sản phẩm trong giỏ (số lượng, size, topping)")
+    public ResponseEntity<ApiResponse<CartDto>> updateCartItemFull(
+            Authentication authentication,
+            @PathVariable Long cartItemId,
+            @Valid @RequestBody UpdateCartItemRequest request) {
+        User user = getAuthenticatedUser(authentication);
+        CartDto cart = cartService.updateCartItemFull(user.getId(), cartItemId, request);
         return ResponseEntity.ok(ApiResponse.success("Đã cập nhật giỏ hàng", cart));
     }
     

@@ -1,5 +1,6 @@
 package com.utetea.backend.service;
 
+import com.utetea.backend.model.DiscountType;
 import com.utetea.backend.model.Order;
 import com.utetea.backend.model.OrderItem;
 import jakarta.mail.MessagingException;
@@ -21,6 +22,7 @@ public class EmailService {
     
     private final JavaMailSender mailSender;
     private final SendGridEmailService sendGridEmailService;
+    private final MemberTierService memberTierService;
     
     /**
      * Gửi email xác nhận đơn hàng - ưu tiên SendGrid, fallback SMTP
@@ -180,20 +182,8 @@ public class EmailService {
         }
         content.append("</div>");
         
-        // Price Summary
-        content.append("<div class='order-info'>");
-        content.append("<p>Tổng tiền: ").append(formatPrice(order.getTotalPrice())).append("</p>");
-        
-        if (order.getDiscount().compareTo(BigDecimal.ZERO) > 0) {
-            content.append("<p>Giảm giá");
-            if (order.getPromotion() != null) {
-                content.append(" (").append(order.getPromotion().getCode()).append(")");
-            }
-            content.append(": -").append(formatPrice(order.getDiscount())).append("</p>");
-        }
-        
-        content.append("<p class='total'>Thành tiền: ").append(formatPrice(order.getFinalPrice())).append("</p>");
-        content.append("</div>");
+        // Price Summary với chi tiết giảm giá
+        content.append(buildPriceSummaryHtml(order, "#FF9800"));
         
         // Thank you message
         content.append("<div class='thank-you' style='background-color: #fff3cd; padding: 15px; margin: 15px 0; border-left: 4px solid #FF9800; border-radius: 5px;'>");
@@ -300,20 +290,8 @@ public class EmailService {
         }
         content.append("</div>");
         
-        // Price Summary
-        content.append("<div class='order-info'>");
-        content.append("<p>Tổng tiền: ").append(formatPrice(order.getTotalPrice())).append("</p>");
-        
-        if (order.getDiscount().compareTo(BigDecimal.ZERO) > 0) {
-            content.append("<p>Giảm giá");
-            if (order.getPromotion() != null) {
-                content.append(" (").append(order.getPromotion().getCode()).append(")");
-            }
-            content.append(": -").append(formatPrice(order.getDiscount())).append("</p>");
-        }
-        
-        content.append("<p class='total'>Thành tiền: ").append(formatPrice(order.getFinalPrice())).append("</p>");
-        content.append("</div>");
+        // Price Summary với chi tiết giảm giá
+        content.append(buildPriceSummaryHtml(order, "#4CAF50"));
         
         // Thank you message
         content.append("<div class='thank-you' style='background-color: #fff3cd; padding: 15px; margin: 15px 0; border-left: 4px solid #4CAF50; border-radius: 5px;'>");
@@ -340,6 +318,78 @@ public class EmailService {
     
     private String formatPrice(BigDecimal price) {
         return String.format("%,d VND", price.longValue());
+    }
+    
+    /**
+     * Tính giảm giá từ voucher
+     */
+    private BigDecimal calculateVoucherDiscount(Order order) {
+        if (order.getPromotion() == null) {
+            return BigDecimal.ZERO;
+        }
+        
+        var promotion = order.getPromotion();
+        BigDecimal totalPrice = order.getTotalPrice();
+        
+        if (promotion.getDiscountType() == DiscountType.PERCENT) {
+            BigDecimal discount = totalPrice.multiply(promotion.getDiscountValue())
+                    .divide(BigDecimal.valueOf(100));
+            if (promotion.getMaxDiscountAmount() != null && 
+                discount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
+                discount = promotion.getMaxDiscountAmount();
+            }
+            return discount;
+        } else {
+            return promotion.getDiscountValue();
+        }
+    }
+    
+    /**
+     * Tính giảm giá từ hạng thành viên
+     */
+    private BigDecimal calculateTierDiscountFromOrder(Order order) {
+        BigDecimal totalDiscount = order.getDiscount();
+        BigDecimal voucherDiscount = calculateVoucherDiscount(order);
+        
+        // Tier discount = Total discount - Voucher discount
+        BigDecimal tierDiscount = totalDiscount.subtract(voucherDiscount);
+        return tierDiscount.compareTo(BigDecimal.ZERO) > 0 ? tierDiscount : BigDecimal.ZERO;
+    }
+    
+    /**
+     * Build Price Summary HTML với chi tiết giảm giá
+     */
+    private String buildPriceSummaryHtml(Order order, String totalColor) {
+        StringBuilder content = new StringBuilder();
+        content.append("<div class='order-info'>");
+        content.append("<p>Tổng tiền hàng: ").append(formatPrice(order.getTotalPrice())).append("</p>");
+        
+        BigDecimal totalDiscount = order.getDiscount();
+        if (totalDiscount.compareTo(BigDecimal.ZERO) > 0) {
+            // Giảm giá từ voucher
+            BigDecimal voucherDiscount = calculateVoucherDiscount(order);
+            if (voucherDiscount.compareTo(BigDecimal.ZERO) > 0 && order.getPromotion() != null) {
+                content.append("<p style='color: #E91E63;'>🎫 Giảm giá voucher (")
+                       .append(order.getPromotion().getCode())
+                       .append("): <strong>-").append(formatPrice(voucherDiscount)).append("</strong></p>");
+            }
+            
+            // Giảm giá từ hạng thành viên
+            BigDecimal tierDiscount = calculateTierDiscountFromOrder(order);
+            if (tierDiscount.compareTo(BigDecimal.ZERO) > 0) {
+                String tierName = order.getUser().getMemberTier() != null ? 
+                        order.getUser().getMemberTier().name() : "BRONZE";
+                content.append("<p style='color: #FFB300;'>👑 Ưu đãi hạng ")
+                       .append(tierName)
+                       .append(": <strong>-").append(formatPrice(tierDiscount)).append("</strong></p>");
+            }
+        }
+        
+        content.append("<p class='total' style='color: ").append(totalColor).append(";'>Thành tiền: ")
+               .append(formatPrice(order.getFinalPrice())).append("</p>");
+        content.append("</div>");
+        
+        return content.toString();
     }
     
     /**
@@ -475,20 +525,8 @@ public class EmailService {
         }
         content.append("</div>");
         
-        // Price Summary
-        content.append("<div class='order-info'>");
-        content.append("<p>Tổng tiền hàng: ").append(formatPrice(order.getTotalPrice())).append("</p>");
-        
-        if (order.getDiscount().compareTo(BigDecimal.ZERO) > 0) {
-            content.append("<p style='color: #e91e63;'>Giảm giá");
-            if (order.getPromotion() != null) {
-                content.append(" (").append(order.getPromotion().getCode()).append(")");
-            }
-            content.append(": -").append(formatPrice(order.getDiscount())).append("</p>");
-        }
-        
-        content.append("<p class='total'>Đã thanh toán: ").append(formatPrice(order.getFinalPrice())).append("</p>");
-        content.append("</div>");
+        // Price Summary với chi tiết giảm giá
+        content.append(buildPriceSummaryHtml(order, "#2196F3"));
         
         // Thank you message
         content.append("<div class='thank-you'>");

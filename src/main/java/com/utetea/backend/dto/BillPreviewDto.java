@@ -27,11 +27,16 @@ public class BillPreviewDto {
     private List<BillItemDto> items;
     
     // Tổng tiền
-    private BigDecimal subtotal;        // Tổng tiền hàng
-    private BigDecimal discount;        // Giảm giá (voucher + tier)
-    private String promotionCode;       // Mã voucher (nếu có)
-    private String tierDiscount;        // Giảm giá theo tier (nếu có)
-    private BigDecimal finalPrice;      // Thành tiền
+    private BigDecimal subtotal;            // Tổng tiền hàng
+    
+    // Chi tiết giảm giá
+    private String promotionCode;           // Mã voucher (nếu có)
+    private BigDecimal voucherDiscount;     // Số tiền giảm từ voucher
+    private String tierName;                // Tên hạng thành viên (BRONZE, SILVER, GOLD, PLATINUM)
+    private BigDecimal tierDiscountAmount;  // Số tiền giảm từ hạng thành viên
+    
+    private BigDecimal totalDiscount;       // Tổng giảm giá (voucher + tier)
+    private BigDecimal finalPrice;          // Thành tiền
     
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
     public static class BillItemDto {

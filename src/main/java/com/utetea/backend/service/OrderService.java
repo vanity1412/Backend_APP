@@ -128,9 +128,8 @@ public class OrderService {
         }
         
         // Calculate discount
-        BigDecimal discount = BigDecimal.ZERO;
+        BigDecimal voucherDiscount = BigDecimal.ZERO;
         String promotionCode = null;
-        String tierDiscountInfo = null;
         
         // Check spin voucher
         if (request.getSpinVoucherCode() != null && !request.getSpinVoucherCode().isEmpty()) {
@@ -138,7 +137,7 @@ public class OrderService {
                     .orElse(null);
             
             if (spinReward != null && !spinReward.getIsUsed()) {
-                discount = subtotal.multiply(BigDecimal.valueOf(spinReward.getDiscountPercent()))
+                voucherDiscount = subtotal.multiply(BigDecimal.valueOf(spinReward.getDiscountPercent()))
                         .divide(BigDecimal.valueOf(100));
                 promotionCode = "SPIN: " + spinReward.getVoucherCode() + " (-" + spinReward.getDiscountPercent() + "%)";
             }
@@ -153,12 +152,12 @@ public class OrderService {
                 if (!promotion.getStartDate().isAfter(now) && !promotion.getEndDate().isBefore(now)) {
                     if (subtotal.compareTo(promotion.getMinOrderValue()) >= 0) {
                         if (promotion.getDiscountType() == DiscountType.PERCENT) {
-                            discount = subtotal.multiply(promotion.getDiscountValue()).divide(BigDecimal.valueOf(100));
-                            if (promotion.getMaxDiscountAmount() != null && discount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
-                                discount = promotion.getMaxDiscountAmount();
+                            voucherDiscount = subtotal.multiply(promotion.getDiscountValue()).divide(BigDecimal.valueOf(100));
+                            if (promotion.getMaxDiscountAmount() != null && voucherDiscount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
+                                voucherDiscount = promotion.getMaxDiscountAmount();
                             }
                         } else {
-                            discount = promotion.getDiscountValue();
+                            voucherDiscount = promotion.getDiscountValue();
                         }
                         promotionCode = promotion.getCode();
                     }
@@ -167,13 +166,13 @@ public class OrderService {
         }
         
         // Calculate tier discount
-        BigDecimal tierDiscount = memberTierService.calculateTierDiscount(user.getMemberTier(), subtotal);
-        if (tierDiscount.compareTo(BigDecimal.ZERO) > 0) {
-            discount = discount.add(tierDiscount);
-            tierDiscountInfo = user.getMemberTier().name() + " (-" + formatPrice(tierDiscount) + ")";
-        }
+        BigDecimal tierDiscountAmount = memberTierService.calculateTierDiscount(user.getMemberTier(), subtotal);
+        String tierName = user.getMemberTier() != null ? user.getMemberTier().name() : null;
         
-        BigDecimal finalPrice = subtotal.subtract(discount);
+        // Total discount
+        BigDecimal totalDiscount = voucherDiscount.add(tierDiscountAmount);
+        
+        BigDecimal finalPrice = subtotal.subtract(totalDiscount);
         if (finalPrice.compareTo(BigDecimal.ZERO) < 0) {
             finalPrice = BigDecimal.ZERO;
         }
@@ -193,9 +192,11 @@ public class OrderService {
                 .paymentMethod(getPaymentMethodDisplayName(request.getPaymentMethod()))
                 .items(billItems)
                 .subtotal(subtotal)
-                .discount(discount)
                 .promotionCode(promotionCode)
-                .tierDiscount(tierDiscountInfo)
+                .voucherDiscount(voucherDiscount)
+                .tierName(tierName)
+                .tierDiscountAmount(tierDiscountAmount)
+                .totalDiscount(totalDiscount)
                 .finalPrice(finalPrice)
                 .build();
     }

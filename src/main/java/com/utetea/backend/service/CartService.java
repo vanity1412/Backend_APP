@@ -4,6 +4,7 @@ import com.utetea.backend.dto.AddToCartRequest;
 import com.utetea.backend.dto.CartDto;
 import com.utetea.backend.dto.CartItemDto;
 import com.utetea.backend.dto.DrinkToppingDto;
+import com.utetea.backend.dto.UpdateCartItemRequest;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.*;
 import com.utetea.backend.repository.*;
@@ -139,6 +140,74 @@ public class CartService {
             cartItem.setTotalPrice(cartItem.getUnitPrice() * quantity);
             cartItemRepository.save(cartItem);
         }
+        
+        return getCart(userId);
+    }
+    
+    /**
+     * Cập nhật đầy đủ thông tin cart item: số lượng, size, toppings
+     */
+    @Transactional
+    public CartDto updateCartItemFull(Long userId, Long cartItemId, UpdateCartItemRequest request) {
+        CartItem cartItem = cartItemRepository.findById(cartItemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found"));
+        
+        if (!cartItem.getCart().getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Cart item does not belong to user");
+        }
+        
+        Drink drink = cartItem.getDrink();
+        
+        // Cập nhật size nếu có
+        DrinkSize size = null;
+        if (request.getSizeId() != null && request.getSizeId() > 0) {
+            size = drinkSizeRepository.findById(request.getSizeId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Size not found"));
+            cartItem.setSize(size);
+        } else if (request.getSizeId() != null && request.getSizeId() == 0) {
+            // Nếu sizeId = 0, xóa size
+            cartItem.setSize(null);
+        }
+        
+        // Tính lại giá
+        BigDecimal unitPrice = drink.getBasePrice();
+        if (cartItem.getSize() != null) {
+            unitPrice = unitPrice.add(cartItem.getSize().getExtraPrice());
+        }
+        
+        // Cập nhật toppings nếu có
+        if (request.getToppingIds() != null) {
+            List<DrinkTopping> toppings = new ArrayList<>();
+            if (!request.getToppingIds().isEmpty()) {
+                toppings = drinkToppingRepository.findAllById(request.getToppingIds());
+            }
+            cartItem.setToppings(toppings);
+            
+            // Cộng giá topping
+            for (DrinkTopping topping : toppings) {
+                unitPrice = unitPrice.add(topping.getPrice());
+            }
+        } else {
+            // Giữ nguyên toppings cũ, cộng giá
+            for (DrinkTopping topping : cartItem.getToppings()) {
+                unitPrice = unitPrice.add(topping.getPrice());
+            }
+        }
+        
+        // Cập nhật số lượng
+        cartItem.setQuantity(request.getQuantity());
+        cartItem.setUnitPrice(unitPrice.doubleValue());
+        cartItem.setTotalPrice(unitPrice.multiply(BigDecimal.valueOf(request.getQuantity())).doubleValue());
+        
+        // Cập nhật note nếu có
+        if (request.getNote() != null) {
+            cartItem.setNote(request.getNote());
+        }
+        
+        cartItemRepository.save(cartItem);
+        
+        log.info("Updated cart item: userId={}, cartItemId={}, quantity={}, sizeId={}", 
+                userId, cartItemId, request.getQuantity(), request.getSizeId());
         
         return getCart(userId);
     }
