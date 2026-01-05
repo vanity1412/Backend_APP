@@ -4,6 +4,7 @@ import com.utetea.backend.dto.AddToCartRequest;
 import com.utetea.backend.dto.CartDto;
 import com.utetea.backend.dto.CartItemDto;
 import com.utetea.backend.dto.DrinkToppingDto;
+import com.utetea.backend.dto.ReorderResponse;
 import com.utetea.backend.dto.UpdateCartItemRequest;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.*;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,6 +31,7 @@ public class CartService {
     private final DrinkRepository drinkRepository;
     private final DrinkSizeRepository drinkSizeRepository;
     private final DrinkToppingRepository drinkToppingRepository;
+    private final OrderRepository orderRepository;
     private final OneSignalService oneSignalService;
     private final UserMonitoringService userMonitoringService;
     
@@ -273,5 +276,226 @@ public class CartService {
         dto.setToppings(toppingDtos);
         
         return dto;
+    }
+    
+    /**
+     * Đặt lại đơn hàng - Load lại các món từ đơn hàng cũ vào giỏ hàng
+     * Kiểm tra món/topping còn bán không, nếu không thì gợi ý thay thế
+     */
+    @Transactional
+    public ReorderResponse reorderFromHistory(Long userId, Long orderId) {
+        log.info("Reordering from order {} for user {}", orderId, userId);
+        
+        // Lấy đơn hàng cũ
+        Order order = orderRepository.findByIdWithItems(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
+        
+        // Verify user owns this order
+        if (!order.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Bạn không có quyền đặt lại đơn hàng này");
+        }
+        
+        // Fetch toppings
+        orderRepository.findOrderItemsWithToppingsByOrderId(orderId);
+        
+        List<ReorderResponse.ReorderItemStatus> itemStatuses = new ArrayList<>();
+        boolean hasUnavailableItems = false;
+        int addedCount = 0;
+        
+        for (OrderItem orderItem : order.getItems()) {
+            ReorderResponse.ReorderItemStatus itemStatus = processReorderItem(userId, orderItem);
+            itemStatuses.add(itemStatus);
+            
+            if (!itemStatus.isAddedToCart()) {
+                hasUnavailableItems = true;
+            } else {
+                addedCount++;
+            }
+        }
+        
+        CartDto cart = getCart(userId);
+        
+        String message;
+        if (hasUnavailableItems) {
+            message = String.format("Đã thêm %d/%d món vào giỏ hàng. Một số món không còn bán.", 
+                    addedCount, order.getItems().size());
+        } else {
+            message = "Đã thêm tất cả món vào giỏ hàng thành công!";
+        }
+        
+        log.info("Reorder completed: {} items added, hasUnavailable={}", addedCount, hasUnavailableItems);
+        
+        return ReorderResponse.builder()
+                .cart(cart)
+                .itemStatuses(itemStatuses)
+                .hasUnavailableItems(hasUnavailableItems)
+                .message(message)
+                .build();
+    }
+    
+    private ReorderResponse.ReorderItemStatus processReorderItem(Long userId, OrderItem orderItem) {
+        String drinkName = orderItem.getDrinkNameSnapshot();
+        String sizeName = orderItem.getSizeNameSnapshot();
+        
+        ReorderResponse.ReorderItemStatus.ReorderItemStatusBuilder statusBuilder = 
+                ReorderResponse.ReorderItemStatus.builder()
+                        .drinkName(drinkName)
+                        .sizeName(sizeName);
+        
+        // Tìm drink theo ID từ order item
+        Drink drink = orderItem.getDrink();
+        if (drink == null || !drink.getIsActive()) {
+            // Drink không còn bán - tìm gợi ý thay thế
+            statusBuilder.drinkAvailable(false)
+                    .sizeAvailable(false)
+                    .addedToCart(false)
+                    .reason("Món '" + drinkName + "' hiện không còn bán");
+            
+            // Tìm món tương tự trong cùng category
+            List<ReorderResponse.SuggestionDto> suggestions = findSimilarDrinks(drink, drinkName);
+            statusBuilder.suggestions(suggestions);
+            
+            return statusBuilder.build();
+        }
+        
+        statusBuilder.drinkAvailable(true);
+        
+        // Kiểm tra size
+        Long sizeId = null;
+        boolean sizeAvailable = true;
+        if (sizeName != null && !sizeName.isEmpty()) {
+            List<DrinkSize> sizes = drinkSizeRepository.findByDrinkId(drink.getId());
+            Optional<DrinkSize> matchingSize = sizes.stream()
+                    .filter(s -> s.getSizeName().equals(sizeName))
+                    .findFirst();
+            
+            if (matchingSize.isPresent()) {
+                sizeId = matchingSize.get().getId();
+            } else {
+                sizeAvailable = false;
+                // Lấy size mặc định nếu có
+                if (!sizes.isEmpty()) {
+                    sizeId = sizes.get(0).getId();
+                }
+            }
+        }
+        statusBuilder.sizeAvailable(sizeAvailable);
+        
+        // Kiểm tra toppings
+        List<Long> availableToppingIds = new ArrayList<>();
+        List<ReorderResponse.ToppingStatus> toppingStatuses = new ArrayList<>();
+        
+        if (orderItem.getToppings() != null) {
+            for (OrderItemTopping orderTopping : orderItem.getToppings()) {
+                String toppingName = orderTopping.getToppingNameSnapshot();
+                
+                // Tìm topping theo tên trong drink hiện tại
+                List<DrinkTopping> drinkToppings = drinkToppingRepository.findByDrinkId(drink.getId());
+                Optional<DrinkTopping> matchingTopping = drinkToppings.stream()
+                        .filter(t -> t.getToppingName().equals(toppingName) && t.getIsActive())
+                        .findFirst();
+                
+                if (matchingTopping.isPresent()) {
+                    availableToppingIds.add(matchingTopping.get().getId());
+                    toppingStatuses.add(ReorderResponse.ToppingStatus.builder()
+                            .toppingName(toppingName)
+                            .available(true)
+                            .build());
+                } else {
+                    toppingStatuses.add(ReorderResponse.ToppingStatus.builder()
+                            .toppingName(toppingName)
+                            .available(false)
+                            .build());
+                }
+            }
+        }
+        statusBuilder.toppingStatuses(toppingStatuses);
+        
+        // Thêm vào giỏ hàng
+        try {
+            AddToCartRequest addRequest = new AddToCartRequest();
+            addRequest.setDrinkId(drink.getId());
+            addRequest.setSizeId(sizeId);
+            addRequest.setQuantity(orderItem.getQuantity());
+            addRequest.setToppingIds(availableToppingIds.isEmpty() ? null : availableToppingIds);
+            addRequest.setNote(orderItem.getNote());
+            
+            addToCart(userId, addRequest);
+            
+            statusBuilder.addedToCart(true);
+            
+            // Tạo reason nếu có thay đổi
+            StringBuilder reason = new StringBuilder();
+            if (!sizeAvailable) {
+                reason.append("Size '").append(sizeName).append("' không còn, đã chọn size khác. ");
+            }
+            long unavailableToppings = toppingStatuses.stream().filter(t -> !t.isAvailable()).count();
+            if (unavailableToppings > 0) {
+                reason.append(unavailableToppings).append(" topping không còn bán.");
+            }
+            
+            if (reason.length() > 0) {
+                statusBuilder.reason(reason.toString().trim());
+            }
+            
+        } catch (Exception e) {
+            log.error("Failed to add item to cart during reorder", e);
+            statusBuilder.addedToCart(false)
+                    .reason("Không thể thêm vào giỏ hàng: " + e.getMessage());
+        }
+        
+        return statusBuilder.build();
+    }
+    
+    private List<ReorderResponse.SuggestionDto> findSimilarDrinks(Drink originalDrink, String drinkName) {
+        List<ReorderResponse.SuggestionDto> suggestions = new ArrayList<>();
+        
+        try {
+            // Tìm trong cùng category nếu có
+            if (originalDrink != null && originalDrink.getCategory() != null) {
+                List<Drink> sameCategoryDrinks = drinkRepository
+                        .findByCategoryIdAndIsActiveTrue(originalDrink.getCategory().getId());
+                
+                for (Drink d : sameCategoryDrinks) {
+                    if (suggestions.size() >= 3) break;
+                    suggestions.add(ReorderResponse.SuggestionDto.builder()
+                            .drinkId(d.getId())
+                            .drinkName(d.getName())
+                            .drinkImage(d.getImageUrl())
+                            .basePrice(d.getBasePrice().doubleValue())
+                            .reason("Cùng danh mục")
+                            .build());
+                }
+            }
+            
+            // Nếu chưa đủ, tìm theo tên tương tự
+            if (suggestions.size() < 3 && drinkName != null) {
+                String[] keywords = drinkName.split(" ");
+                for (String keyword : keywords) {
+                    if (keyword.length() < 2) continue;
+                    
+                    List<Drink> similarDrinks = drinkRepository.searchByName(keyword);
+                    for (Drink d : similarDrinks) {
+                        if (suggestions.size() >= 3) break;
+                        // Tránh trùng lặp
+                        boolean alreadyAdded = suggestions.stream()
+                                .anyMatch(s -> s.getDrinkId().equals(d.getId()));
+                        if (!alreadyAdded) {
+                            suggestions.add(ReorderResponse.SuggestionDto.builder()
+                                    .drinkId(d.getId())
+                                    .drinkName(d.getName())
+                                    .drinkImage(d.getImageUrl())
+                                    .basePrice(d.getBasePrice().doubleValue())
+                                    .reason("Tên tương tự")
+                                    .build());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error finding similar drinks", e);
+        }
+        
+        return suggestions;
     }
 }

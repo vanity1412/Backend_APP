@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.utetea.backend.dto.AddToCartRequest;
 import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.CartDto;
+import com.utetea.backend.dto.ReorderRequest;
+import com.utetea.backend.dto.ReorderResponse;
 import com.utetea.backend.dto.UpdateCartItemRequest;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.User;
@@ -138,5 +140,16 @@ public class CartController {
         verifyUserAccess(authentication, userId);
         cartService.clearCart(userId);
         return ResponseEntity.ok(ApiResponse.<Void>success("Đã xóa giỏ hàng", null));
+    }
+    
+    @PostMapping("/reorder")
+    @Operation(summary = "Đặt lại đơn hàng từ lịch sử - Load lại các món vào giỏ hàng")
+    public ResponseEntity<ApiResponse<ReorderResponse>> reorderFromHistory(
+            Authentication authentication,
+            @Valid @RequestBody ReorderRequest request) {
+        User user = getAuthenticatedUser(authentication);
+        log.info("Reordering from order {} for user {}", request.getOrderId(), user.getId());
+        ReorderResponse response = cartService.reorderFromHistory(user.getId(), request.getOrderId());
+        return ResponseEntity.ok(ApiResponse.success(response.getMessage(), response));
     }
 }
