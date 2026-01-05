@@ -42,6 +42,7 @@ public class OrderService {
     private final RateLimitService rateLimitService;
     private final UserMonitoringService userMonitoringService;
     private final ChallengeService challengeService;
+    private final GhnService ghnService;
 
     /**
      * Preview bill trước khi thanh toán
@@ -169,10 +170,33 @@ public class OrderService {
         BigDecimal tierDiscountAmount = memberTierService.calculateTierDiscount(user.getMemberTier(), subtotal);
         String tierName = user.getMemberTier() != null ? user.getMemberTier().name() : null;
         
+        // Calculate shipping fee - Ưu tiên từ client, nếu không có thì tính từ GHN
+        BigDecimal shippingFee = BigDecimal.ZERO;
+        Integer ghnDistrictId = request.getGhnDistrictId();
+        String ghnWardCode = request.getGhnWardCode();
+        
+        // Ưu tiên sử dụng shippingFee từ client (đã tính sẵn)
+        if (request.getShippingFee() != null && request.getShippingFee() > 0) {
+            shippingFee = BigDecimal.valueOf(request.getShippingFee());
+            log.info("Using client shipping fee: {} VND", shippingFee);
+        }
+        // Nếu không có, tính từ GHN
+        else if (request.getType() == OrderType.DELIVERY && ghnDistrictId != null && ghnWardCode != null) {
+            try {
+                int fee = ghnService.getShippingFeeWithInsurance(ghnDistrictId, ghnWardCode, subtotal.intValue());
+                shippingFee = BigDecimal.valueOf(fee);
+                log.info("Calculated shipping fee from GHN: {} VND for district {} ward {}", fee, ghnDistrictId, ghnWardCode);
+            } catch (Exception e) {
+                log.warn("Failed to calculate shipping fee from GHN: {}", e.getMessage());
+                // Không throw exception, để user vẫn có thể đặt hàng
+                shippingFee = BigDecimal.ZERO;
+            }
+        }
+        
         // Total discount
         BigDecimal totalDiscount = voucherDiscount.add(tierDiscountAmount);
         
-        BigDecimal finalPrice = subtotal.subtract(totalDiscount);
+        BigDecimal finalPrice = subtotal.add(shippingFee).subtract(totalDiscount);
         if (finalPrice.compareTo(BigDecimal.ZERO) < 0) {
             finalPrice = BigDecimal.ZERO;
         }
@@ -192,6 +216,9 @@ public class OrderService {
                 .paymentMethod(getPaymentMethodDisplayName(request.getPaymentMethod()))
                 .items(billItems)
                 .subtotal(subtotal)
+                .shippingFee(shippingFee)
+                .ghnDistrictId(ghnDistrictId)
+                .ghnWardCode(ghnWardCode)
                 .promotionCode(promotionCode)
                 .voucherDiscount(voucherDiscount)
                 .tierName(tierName)
@@ -411,7 +438,21 @@ public class OrderService {
         }
 
         order.setDiscount(discount);
-        order.setFinalPrice(totalPrice.subtract(discount));
+        
+        // Set shipping fee từ client (nếu có)
+        BigDecimal shippingFee = BigDecimal.ZERO;
+        if (request.getShippingFee() != null && request.getShippingFee() > 0) {
+            shippingFee = BigDecimal.valueOf(request.getShippingFee());
+            order.setShippingFee(shippingFee);
+            log.info("Applied shipping fee: {} VND", shippingFee);
+        }
+        
+        // Final price = totalPrice + shippingFee - discount
+        BigDecimal finalPrice = totalPrice.add(shippingFee).subtract(discount);
+        if (finalPrice.compareTo(BigDecimal.ZERO) < 0) {
+            finalPrice = BigDecimal.ZERO;
+        }
+        order.setFinalPrice(finalPrice);
 
         order = orderRepository.save(order);
         log.info("Order created successfully with id: {}", order.getId());
@@ -709,6 +750,7 @@ public class OrderService {
         dto.setPickupTime(order.getPickupTime());
         dto.setStatus(order.getStatus());
         dto.setTotalPrice(order.getTotalPrice());
+        dto.setShippingFee(order.getShippingFee());
         dto.setDiscount(order.getDiscount());
         dto.setFinalPrice(order.getFinalPrice());
         dto.setPaymentMethod(order.getPaymentMethod());

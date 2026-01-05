@@ -29,4 +29,9 @@ public class CacheConfig {
     public static final String CATEGORIES_CACHE = "categories";
     public static final String STORES_CACHE = "stores";
     public static final String PROMOTIONS_CACHE = "promotions";
+    
+    // GHN Cache names (địa chỉ ít thay đổi nên cache lâu hơn)
+    public static final String GHN_PROVINCES_CACHE = "ghn-provinces";
+    public static final String GHN_DISTRICTS_CACHE = "ghn-districts";
+    public static final String GHN_WARDS_CACHE = "ghn-wards";
 }

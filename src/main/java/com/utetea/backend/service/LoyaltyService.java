@@ -21,6 +21,7 @@ public class LoyaltyService {
     private final UserRepository userRepository;
     private final SpinRewardRepository spinRewardRepository;
     private final RateLimitService rateLimitService;
+    private final OneSignalService oneSignalService;
     
     @Value("${loyalty.points-to-spin:5}")
     private int pointsToSpin;
@@ -110,6 +111,20 @@ public class LoyaltyService {
             message = "Chúc mừng! Bạn được MIỄN PHÍ 1 đơn hàng! Mã: " + voucherCode;
         } else {
             message = "Chúc mừng! Bạn nhận được voucher giảm " + discountPercent + "%! Mã: " + voucherCode;
+        }
+        
+        // 🎁 Gửi thông báo khi trúng voucher (discountPercent > 0)
+        if (discountPercent > 0) {
+            try {
+                String title = "🎉 Chúc mừng bạn trúng voucher!";
+                String content = discountPercent == 100 
+                    ? "Bạn được MIỄN PHÍ 1 đơn hàng! Mã: " + reward.getVoucherCode()
+                    : "Bạn nhận được voucher giảm " + discountPercent + "%! Mã: " + reward.getVoucherCode();
+                oneSignalService.sendToUser(String.valueOf(user.getId()), title, content, 
+                    NotificationType.SPIN_VOUCHER, reward.getId());
+            } catch (Exception e) {
+                // Log error but don't fail the spin
+            }
         }
         
         return SpinWheelResponse.builder()

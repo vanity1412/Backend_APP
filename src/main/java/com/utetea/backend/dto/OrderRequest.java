@@ -26,6 +26,13 @@ public class OrderRequest {
     
     private String spinVoucherCode; // Mã voucher từ spin wheel
     
+    // GHN Shipping Info
+    private Integer ghnDistrictId;  // District ID cho GHN
+    private String ghnWardCode;     // Ward code cho GHN
+    
+    // Shipping Fee từ client
+    private Integer shippingFee;    // Phí ship tính từ client
+    
     @NotNull
     private List<OrderItemRequest> items;
 }

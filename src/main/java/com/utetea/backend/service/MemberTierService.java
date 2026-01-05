@@ -7,6 +7,7 @@ import com.utetea.backend.dto.MemberTierBenefitsDto.TierInfoDto;
 import com.utetea.backend.dto.TierDiscountPreview;
 import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.MemberTier;
+import com.utetea.backend.model.NotificationType;
 import com.utetea.backend.model.User;
 import com.utetea.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class MemberTierService {
     
     private final UserRepository userRepository;
     private final MemberTierConfig tierConfig;
+    private final OneSignalService oneSignalService;
     
     /**
      * Lấy thông tin quyền lợi tier của user
@@ -52,6 +54,9 @@ public class MemberTierService {
             user.setMemberTier(newTier);
             userRepository.save(user);
             log.info("User {} upgraded from {} to {}", username, oldTier, newTier);
+            
+            // 🎖️ Gửi thông báo khi lên cấp member tier
+            sendTierUpgradeNotification(user, oldTier, newTier);
         }
         
         return user.getMemberTier();
@@ -72,9 +77,28 @@ public class MemberTierService {
             user.setMemberTier(newTier);
             userRepository.save(user);
             log.info("User {} upgraded from {} to {}", user.getUsername(), oldTier, newTier);
+            
+            // 🎖️ Gửi thông báo khi lên cấp member tier
+            sendTierUpgradeNotification(user, oldTier, newTier);
         }
         
         return user.getMemberTier();
+    }
+    
+    /**
+     * Gửi thông báo khi user lên cấp member tier
+     */
+    private void sendTierUpgradeNotification(User user, MemberTier oldTier, MemberTier newTier) {
+        try {
+            TierBenefits newBenefits = tierConfig.getBenefits(newTier);
+            String title = "🎖️ Chúc mừng lên hạng " + newBenefits.getTierName() + "!";
+            String content = "Bạn đã lên hạng từ " + tierConfig.getBenefits(oldTier).getTierName() 
+                + " lên " + newBenefits.getTierName() + ". Hãy khám phá các quyền lợi mới!";
+            oneSignalService.sendToUser(String.valueOf(user.getId()), title, content, 
+                NotificationType.TIER_UPGRADE, null);
+        } catch (Exception e) {
+            log.error("Failed to send tier upgrade notification for user {}", user.getId(), e);
+        }
     }
     
     /**

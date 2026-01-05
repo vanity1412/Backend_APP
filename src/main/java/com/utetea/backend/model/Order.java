@@ -38,6 +38,9 @@ public class Order extends AuditEntity {
     @Column(name = "total_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalPrice;
     
+    @Column(name = "shipping_fee", precision = 10, scale = 2)
+    private BigDecimal shippingFee = BigDecimal.ZERO;
+    
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal discount = BigDecimal.ZERO;
     

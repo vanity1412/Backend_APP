@@ -96,15 +96,7 @@ public class CartService {
             log.error("Failed to log cart add to monitoring", e);
         }
         
-        // Gửi thông báo khi thêm món vào giỏ
-        try {
-            String title = "✅ Đã thêm vào giỏ hàng";
-            String content = drink.getName() + " x" + request.getQuantity() + " - " + totalPrice + "đ";
-            
-            oneSignalService.sendToUser(String.valueOf(userId), title, content, NotificationType.SYSTEM, drink.getId());
-        } catch (Exception e) {
-            log.error("Failed to send cart notification", e);
-        }
+        // ❌ Không gửi thông báo khi thêm vào giỏ hàng (theo yêu cầu)
         
         return getCart(userId);
     }

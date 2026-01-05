@@ -21,6 +21,7 @@ public class OrderDto {
     private LocalDateTime pickupTime;
     private OrderStatus status;
     private BigDecimal totalPrice;
+    private BigDecimal shippingFee;
     private BigDecimal discount;
     private BigDecimal finalPrice;
     private PaymentMethod paymentMethod;

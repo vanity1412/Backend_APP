@@ -78,6 +78,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/paypal/cancel").permitAll()
                         .requestMatchers("/api/paypal/debug-config").permitAll()
                         
+                        // GHN endpoints - public for address lookup
+                        .requestMatchers("/api/ghn/**").permitAll()
+                        
                         // WebSocket endpoints
                         .requestMatchers("/ws/**").permitAll()
                         

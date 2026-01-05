@@ -20,6 +20,7 @@ public class ChallengeService {
     private final ChallengeRepository challengeRepository;
     private final ChallengeCompletionRepository challengeCompletionRepository;
     private final UserRepository userRepository;
+    private final OneSignalService oneSignalService;
     
     /**
      * Kiểm tra và xử lý challenge khi đơn hàng hoàn thành
@@ -63,6 +64,17 @@ public class ChallengeService {
                 log.info("🎯 Challenge completed! User {} bought {} x {} - earned {} points",
                         user.getUsername(), item.getQuantity(), item.getDrinkNameSnapshot(), 
                         challenge.getRewardPoints());
+                
+                // 🎯 Gửi thông báo khi hoàn thành challenge
+                try {
+                    String title = "🎯 Hoàn thành Challenge!";
+                    String content = "Bạn đã hoàn thành \"" + challenge.getName() + "\" và nhận được " 
+                        + challenge.getRewardPoints() + " điểm thưởng!";
+                    oneSignalService.sendToUser(String.valueOf(user.getId()), title, content, 
+                        NotificationType.CHALLENGE_COMPLETE, completion.getId());
+                } catch (Exception e) {
+                    log.error("Failed to send challenge notification", e);
+                }
                 
                 completions.add(toCompletionDto(completion, challenge));
             }

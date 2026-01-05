@@ -357,12 +357,18 @@ public class EmailService {
     }
     
     /**
-     * Build Price Summary HTML với chi tiết giảm giá
+     * Build Price Summary HTML với chi tiết giảm giá và phí ship
      */
     private String buildPriceSummaryHtml(Order order, String totalColor) {
         StringBuilder content = new StringBuilder();
         content.append("<div class='order-info'>");
         content.append("<p>Tổng tiền hàng: ").append(formatPrice(order.getTotalPrice())).append("</p>");
+        
+        // Phí ship (nếu là giao hàng)
+        BigDecimal shippingFee = order.getShippingFee();
+        if (shippingFee != null && shippingFee.compareTo(BigDecimal.ZERO) > 0) {
+            content.append("<p>🚚 Phí giao hàng: <strong>").append(formatPrice(shippingFee)).append("</strong></p>");
+        }
         
         BigDecimal totalDiscount = order.getDiscount();
         if (totalDiscount.compareTo(BigDecimal.ZERO) > 0) {

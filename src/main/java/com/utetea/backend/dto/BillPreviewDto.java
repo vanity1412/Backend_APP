@@ -29,6 +29,11 @@ public class BillPreviewDto {
     // Tổng tiền
     private BigDecimal subtotal;            // Tổng tiền hàng
     
+    // Phí giao hàng (GHN)
+    private BigDecimal shippingFee;         // Phí giao hàng
+    private Integer ghnDistrictId;          // District ID cho GHN
+    private String ghnWardCode;             // Ward code cho GHN
+    
     // Chi tiết giảm giá
     private String promotionCode;           // Mã voucher (nếu có)
     private BigDecimal voucherDiscount;     // Số tiền giảm từ voucher
@@ -36,7 +41,7 @@ public class BillPreviewDto {
     private BigDecimal tierDiscountAmount;  // Số tiền giảm từ hạng thành viên
     
     private BigDecimal totalDiscount;       // Tổng giảm giá (voucher + tier)
-    private BigDecimal finalPrice;          // Thành tiền
+    private BigDecimal finalPrice;          // Thành tiền (subtotal + shippingFee - totalDiscount)
     
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
     public static class BillItemDto {
