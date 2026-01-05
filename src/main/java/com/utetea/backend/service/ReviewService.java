@@ -75,6 +75,16 @@ public class ReviewService {
         
         review = reviewRepository.save(review);
         
+        // 🎁 Cộng 1 điểm vòng quay khi đánh giá thành công
+        try {
+            int updated = userRepository.addPoints(user.getId(), 1);
+            if (updated > 0) {
+                log.info("Added 1 spin point for user {} after review", user.getId());
+            }
+        } catch (Exception e) {
+            log.error("Failed to add spin point for review", e);
+        }
+        
         // 🛡️ Log activity - Đánh giá sản phẩm
         try {
             userMonitoringService.logActivity(user.getId(), 
