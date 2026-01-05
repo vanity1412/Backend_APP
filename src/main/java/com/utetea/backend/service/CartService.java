@@ -389,10 +389,10 @@ public class CartService {
             for (OrderItemTopping orderTopping : orderItem.getToppings()) {
                 String toppingName = orderTopping.getToppingNameSnapshot();
                 
-                // Tìm topping theo tên trong drink hiện tại
-                List<DrinkTopping> drinkToppings = drinkToppingRepository.findByDrinkId(drink.getId());
+                // Tìm topping theo tên trong drink hiện tại (bao gồm cả topping chung)
+                List<DrinkTopping> drinkToppings = drinkToppingRepository.findByDrinkIdOrDrinkIdIsNullAndIsActiveTrue(drink.getId());
                 Optional<DrinkTopping> matchingTopping = drinkToppings.stream()
-                        .filter(t -> t.getToppingName().equals(toppingName) && t.getIsActive())
+                        .filter(t -> t.getToppingName().equals(toppingName))
                         .findFirst();
                 
                 if (matchingTopping.isPresent()) {

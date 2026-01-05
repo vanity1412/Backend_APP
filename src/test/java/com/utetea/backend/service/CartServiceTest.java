@@ -46,6 +46,15 @@ class CartServiceTest {
     @Mock
     private DrinkToppingRepository drinkToppingRepository;
     
+    @Mock
+    private OrderRepository orderRepository;
+    
+    @Mock
+    private OneSignalService oneSignalService;
+    
+    @Mock
+    private UserMonitoringService userMonitoringService;
+    
     @InjectMocks
     private CartService cartService;
     
