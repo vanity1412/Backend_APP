@@ -50,8 +50,8 @@ public class ReviewService {
             throw new BadRequestException("Can only review completed orders");
         }
         
-        // Validate order item belongs to order
-        OrderItem orderItem = orderItemRepository.findById(request.getOrderItemId())
+        // FIX: Sử dụng query với JOIN FETCH để load Order và Drink cùng lúc
+        OrderItem orderItem = orderItemRepository.findByIdWithOrder(request.getOrderItemId())
                 .orElseThrow(() -> new ResourceNotFoundException("Order item not found"));
         
         if (!orderItem.getOrder().getId().equals(order.getId())) {
@@ -133,11 +133,13 @@ public class ReviewService {
                 .build();
     }
     
+    @Transactional(readOnly = true)
     public boolean canUserReviewOrderItem(String username, Long orderItemId) {
         User user = userRepository.findByUsername(username).orElse(null);
         if (user == null) return false;
         
-        OrderItem orderItem = orderItemRepository.findById(orderItemId).orElse(null);
+        // FIX: Sử dụng query với JOIN FETCH để load Order cùng lúc
+        OrderItem orderItem = orderItemRepository.findByIdWithOrder(orderItemId).orElse(null);
         if (orderItem == null) return false;
         
         Order order = orderItem.getOrder();

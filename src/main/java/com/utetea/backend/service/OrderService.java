@@ -292,14 +292,33 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public List<OrderDto> getUserOrders(Long userId) {
-        return orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId).stream()
+        // Bước 1: Fetch orders với items và drink
+        List<Order> orders = orderRepository.findByUserIdWithItemsOrderByCreatedAtDesc(userId);
+        
+        // Bước 2: Fetch toppings riêng để tránh MultipleBagFetchException
+        if (!orders.isEmpty()) {
+            List<Long> orderIds = orders.stream().map(Order::getId).collect(Collectors.toList());
+            orderRepository.findOrderItemsWithToppings(orderIds);
+            // Hibernate sẽ tự động populate toppings vào các OrderItem đã load
+        }
+        
+        return orders.stream()
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<OrderDto> getUserCurrentOrders(Long userId) {
-        return orderRepository.findByUserIdAndStatusNotOrderByCreatedAtDesc(userId, OrderStatus.DONE).stream()
+        // Bước 1: Fetch orders với items và drink (không bao gồm DONE)
+        List<Order> orders = orderRepository.findByUserIdAndStatusNotWithItemsOrderByCreatedAtDesc(userId, OrderStatus.DONE);
+        
+        // Bước 2: Fetch toppings riêng để tránh MultipleBagFetchException
+        if (!orders.isEmpty()) {
+            List<Long> orderIds = orders.stream().map(Order::getId).collect(Collectors.toList());
+            orderRepository.findOrderItemsWithToppings(orderIds);
+        }
+        
+        return orders.stream()
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
     }
@@ -308,6 +327,10 @@ public class OrderService {
     public OrderDto getOrderById(Long orderId) {
         Order order = orderRepository.findByIdWithItems(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", "id", orderId));
+        
+        // Fetch toppings riêng để tránh MultipleBagFetchException
+        orderRepository.findOrderItemsWithToppingsByOrderId(orderId);
+        
         return mapToDto(order);
     }
 
@@ -527,9 +550,12 @@ public class OrderService {
         dto.setItemPrice(item.getItemPrice());
         dto.setNote(item.getNote());
 
-        List<OrderItemToppingDto> toppingDtos = item.getToppings().stream()
-                .map(t -> new OrderItemToppingDto(t.getId(), t.getToppingNameSnapshot(), t.getPriceSnapshot()))
-                .collect(Collectors.toList());
+        // FIX: Kiểm tra null trước khi stream để tránh NullPointerException
+        List<OrderItemToppingDto> toppingDtos = item.getToppings() != null 
+                ? item.getToppings().stream()
+                    .map(t -> new OrderItemToppingDto(t.getId(), t.getToppingNameSnapshot(), t.getPriceSnapshot()))
+                    .collect(Collectors.toList())
+                : new java.util.ArrayList<>();
         dto.setToppings(toppingDtos);
 
         return dto;

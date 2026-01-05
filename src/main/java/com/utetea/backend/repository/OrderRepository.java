@@ -19,28 +19,51 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByUserIdOrderByCreatedAtDesc(Long userId);
     Page<Order> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
     
-    // FIX Performance: JOIN FETCH để tránh N+1 query khi load orders với items
+    // FIX: Tách query thành 2 bước để tránh MultipleBagFetchException
+    // Bước 1: Fetch orders với items và drink
     @Query("SELECT DISTINCT o FROM Order o " +
            "LEFT JOIN FETCH o.user " +
            "LEFT JOIN FETCH o.store " +
            "LEFT JOIN FETCH o.items i " +
            "LEFT JOIN FETCH i.drink " +
-           "LEFT JOIN FETCH i.toppings " +
            "WHERE o.user.id = :userId " +
            "ORDER BY o.createdAt DESC")
     List<Order> findByUserIdWithItemsOrderByCreatedAtDesc(@Param("userId") Long userId);
     
-    // FIX Performance: JOIN FETCH cho single order
+    // FIX: Fetch toppings riêng cho các order items
+    @Query("SELECT DISTINCT i FROM OrderItem i " +
+           "LEFT JOIN FETCH i.toppings " +
+           "WHERE i.order.id IN :orderIds")
+    List<com.utetea.backend.model.OrderItem> findOrderItemsWithToppings(@Param("orderIds") List<Long> orderIds);
+    
+    // FIX Performance: JOIN FETCH cho single order - tách thành 2 query
     @Query("SELECT o FROM Order o " +
            "LEFT JOIN FETCH o.user " +
            "LEFT JOIN FETCH o.store " +
            "LEFT JOIN FETCH o.items i " +
            "LEFT JOIN FETCH i.drink " +
-           "LEFT JOIN FETCH i.toppings " +
            "WHERE o.id = :orderId")
     Optional<Order> findByIdWithItems(@Param("orderId") Long orderId);
     
+    // Fetch toppings cho single order
+    @Query("SELECT DISTINCT i FROM OrderItem i " +
+           "LEFT JOIN FETCH i.toppings " +
+           "WHERE i.order.id = :orderId")
+    List<com.utetea.backend.model.OrderItem> findOrderItemsWithToppingsByOrderId(@Param("orderId") Long orderId);
+    
     List<Order> findByUserIdAndStatusNotOrderByCreatedAtDesc(Long userId, OrderStatus status);
+    
+    // FIX: Query với JOIN FETCH cho current orders (không bao gồm DONE)
+    @Query("SELECT DISTINCT o FROM Order o " +
+           "LEFT JOIN FETCH o.user " +
+           "LEFT JOIN FETCH o.store " +
+           "LEFT JOIN FETCH o.items i " +
+           "LEFT JOIN FETCH i.drink " +
+           "WHERE o.user.id = :userId AND o.status <> :status " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByUserIdAndStatusNotWithItemsOrderByCreatedAtDesc(
+            @Param("userId") Long userId, 
+            @Param("status") OrderStatus status);
     
     Page<Order> findAllByOrderByCreatedAtDesc(Pageable pageable);
     Page<Order> findByStatusOrderByCreatedAtDesc(OrderStatus status, Pageable pageable);
