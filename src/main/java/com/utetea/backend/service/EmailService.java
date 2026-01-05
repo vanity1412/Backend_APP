@@ -526,6 +526,10 @@ public class EmailService {
                 content.append("</p>");
             }
             
+            if (item.getNote() != null && !item.getNote().isEmpty()) {
+                content.append("<p><em style='color: #FF9800;'>📝 Ghi chú: ").append(item.getNote()).append("</em></p>");
+            }
+            
             content.append("<p>x").append(item.getQuantity()).append(" = <strong>").append(formatPrice(item.getItemPrice())).append("</strong></p>");
             content.append("</div>");
         }
