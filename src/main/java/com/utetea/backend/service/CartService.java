@@ -14,6 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.utetea.backend.util.RequestContextUtil;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -94,7 +96,8 @@ public class CartService {
         
         // 🛡️ Log activity - Thêm vào giỏ hàng
         try {
-            userMonitoringService.logCartAddItem(userId, drink.getName(), request.getQuantity(), null);
+            userMonitoringService.logCartAddItem(userId, drink.getName(), request.getQuantity(), 
+                RequestContextUtil.getCurrentRequest());
         } catch (Exception e) {
             log.error("Failed to log cart add to monitoring", e);
         }
@@ -221,7 +224,8 @@ public class CartService {
         
         // 🛡️ Log activity - Xóa khỏi giỏ hàng
         try {
-            userMonitoringService.logCartRemoveItem(userId, productName, null);
+            userMonitoringService.logCartRemoveItem(userId, productName, 
+                RequestContextUtil.getCurrentRequest());
         } catch (Exception e) {
             log.error("Failed to log cart remove to monitoring", e);
         }

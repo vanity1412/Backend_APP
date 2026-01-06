@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.HashMap;
 import com.utetea.backend.dto.ChangePasswordRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.utetea.backend.util.RequestContextUtil;
 
 @Service
 @RequiredArgsConstructor
@@ -86,7 +87,7 @@ public class UserProfileService {
             if (request.getEmail() != null) updatedFields.append("email, ");
             String fields = updatedFields.length() > 0 ? 
                 updatedFields.substring(0, updatedFields.length() - 2) : "none";
-            userMonitoringService.logProfileUpdate(user.getId(), fields, null);
+            userMonitoringService.logProfileUpdate(user.getId(), fields, RequestContextUtil.getCurrentRequest());
         } catch (Exception e) {
             log.error("Failed to log profile update to monitoring", e);
         }
@@ -131,7 +132,7 @@ public class UserProfileService {
         
         // 🛡️ Log activity - Đổi mật khẩu (QUAN TRỌNG)
         try {
-            userMonitoringService.logPasswordChange(user.getId(), null);
+            userMonitoringService.logPasswordChange(user.getId(), RequestContextUtil.getCurrentRequest());
         } catch (Exception e) {
             log.error("Failed to log password change to monitoring", e);
         }

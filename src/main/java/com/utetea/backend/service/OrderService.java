@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.utetea.backend.util.RequestContextUtil;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -497,7 +499,7 @@ public class OrderService {
         // 🛡️ Log activity - Tạo đơn hàng
         try {
             userMonitoringService.logOrderCreate(user.getId(), order.getId(), 
-                order.getFinalPrice().doubleValue(), null);
+                order.getFinalPrice().doubleValue(), RequestContextUtil.getCurrentRequest());
         } catch (Exception e) {
             log.error("Failed to log order creation to monitoring", e);
         }
@@ -531,7 +533,8 @@ public class OrderService {
             
             // Log payment success cho monitoring
             try {
-                userMonitoringService.logPaymentSuccess(user.getId(), order.getId(), pm.name(), null);
+                userMonitoringService.logPaymentSuccess(user.getId(), order.getId(), pm.name(), 
+                    RequestContextUtil.getCurrentRequest());
             } catch (Exception e) {
                 log.error("Failed to log payment success to monitoring", e);
             }
@@ -633,7 +636,7 @@ public class OrderService {
         // 🛡️ Log activity - Cập nhật trạng thái đơn hàng
         try {
             if (newStatus == OrderStatus.CANCELED && userId != null) {
-                userMonitoringService.logOrderCancel(userId, orderId, null);
+                userMonitoringService.logOrderCancel(userId, orderId, RequestContextUtil.getCurrentRequest());
             }
         } catch (Exception e) {
             log.error("Failed to log order status update to monitoring", e);
@@ -651,7 +654,8 @@ public class OrderService {
             // 🛡️ Log activity - Thanh toán thành công
             try {
                 userMonitoringService.logPaymentSuccess(userId, orderId, 
-                    order.getPaymentMethod() != null ? order.getPaymentMethod().name() : "UNKNOWN", null);
+                    order.getPaymentMethod() != null ? order.getPaymentMethod().name() : "UNKNOWN", 
+                    RequestContextUtil.getCurrentRequest());
             } catch (Exception e) {
                 log.error("Failed to log payment success to monitoring", e);
             }
