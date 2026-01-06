@@ -43,6 +43,10 @@ public class UserRiskScore extends AuditEntity {
 
     @Column(name = "spam_request_count")
     private Integer spamRequestCount = 0;
+    
+    // IP gần nhất của user (lấy từ activity log)
+    @Column(name = "last_ip_address", length = 50)
+    private String lastIpAddress;
 
     // Thời gian reset (mỗi 24h reset một phần điểm)
     @Column(name = "last_score_reset")

@@ -19,6 +19,9 @@ public class MonitoringAlertDto {
     private String targetUserFullName;
     private String targetUserAvatarUrl;
     
+    // IP address liên quan đến alert
+    private String ipAddress;
+    
     private AlertType alertType;
     private String alertTypeDisplay;
     private AlertSeverity severity;
@@ -54,6 +57,9 @@ public class MonitoringAlertDto {
             dto.setTargetUserFullName(alert.getTargetUser().getFullName());
             dto.setTargetUserAvatarUrl(alert.getTargetUser().getAvatarUrl());
         }
+        
+        // Lấy IP từ alert
+        dto.setIpAddress(alert.getIpAddress());
         
         dto.setAlertType(alert.getAlertType());
         dto.setAlertTypeDisplay(getAlertTypeDisplay(alert.getAlertType()));

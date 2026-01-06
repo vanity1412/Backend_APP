@@ -59,6 +59,10 @@ public class MonitoringAlert extends AuditEntity {
     // Liên kết với activity log
     @Column(name = "activity_log_id")
     private Long activityLogId;
+    
+    // IP address liên quan đến alert
+    @Column(name = "ip_address", length = 50)
+    private String ipAddress;
 
     // Push notification đã gửi chưa
     @Column(name = "notification_sent")

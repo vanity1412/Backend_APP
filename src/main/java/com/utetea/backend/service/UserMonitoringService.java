@@ -114,12 +114,13 @@ public class UserMonitoringService {
     public void logLoginFailed(String username, HttpServletRequest request) {
         User user = userRepository.findByUsername(username).orElse(null);
         Long userId = user != null ? user.getId() : null;
+        String ipAddress = getClientIp(request);
         
         logActivity(userId, ActivityType.LOGIN_FAILED, 
             "Đăng nhập thất bại: " + username, RiskLevel.WARNING, null, request);
         
         if (userId != null) {
-            incrementRiskScore(userId, ActivityType.LOGIN_FAILED, SCORE_LOGIN_FAILED);
+            incrementRiskScore(userId, ActivityType.LOGIN_FAILED, SCORE_LOGIN_FAILED, ipAddress);
             checkBruteForceAttempt(userId, request);
         }
     }
@@ -373,9 +374,19 @@ public class UserMonitoringService {
 
     @Transactional
     public void incrementRiskScore(Long userId, ActivityType activityType, int points) {
+        incrementRiskScore(userId, activityType, points, null);
+    }
+    
+    @Transactional
+    public void incrementRiskScore(Long userId, ActivityType activityType, int points, String ipAddress) {
         UserRiskScore riskScore = getOrCreateRiskScore(userId);
         
         riskScore.addScore(points);
+        
+        // Cập nhật IP gần nhất
+        if (ipAddress != null && !ipAddress.isEmpty()) {
+            riskScore.setLastIpAddress(ipAddress);
+        }
         
         // Update specific counters
         switch (activityType) {
@@ -539,6 +550,12 @@ public class UserMonitoringService {
     @Transactional
     public MonitoringAlert createAlert(Long userId, AlertType alertType, AlertSeverity severity,
                                         String title, String message) {
+        return createAlert(userId, alertType, severity, title, message, null);
+    }
+    
+    @Transactional
+    public MonitoringAlert createAlert(Long userId, AlertType alertType, AlertSeverity severity,
+                                        String title, String message, String ipAddress) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
         
@@ -548,6 +565,7 @@ public class UserMonitoringService {
             .severity(severity)
             .title(title)
             .message(message)
+            .ipAddress(ipAddress)
             .status(AlertStatus.PENDING)
             .notificationSent(false)
             .build();

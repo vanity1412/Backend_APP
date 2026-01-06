@@ -31,6 +31,9 @@ public class UserRiskScoreDto {
     private Integer promotionAbuseCount;
     private Integer spamRequestCount;
     
+    // IP gần nhất của user
+    private String lastIpAddress;
+    
     private LocalDateTime lastScoreReset;
     
     // Admin note
@@ -70,6 +73,9 @@ public class UserRiskScoreDto {
         dto.setRateLimitHitCount(score.getRateLimitHitCount());
         dto.setPromotionAbuseCount(score.getPromotionAbuseCount());
         dto.setSpamRequestCount(score.getSpamRequestCount());
+        
+        // Lấy IP gần nhất từ user nếu có
+        dto.setLastIpAddress(score.getLastIpAddress());
         
         dto.setLastScoreReset(score.getLastScoreReset());
         
