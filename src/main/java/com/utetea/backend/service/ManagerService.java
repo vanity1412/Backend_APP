@@ -105,7 +105,10 @@ public class ManagerService {
             return;
         }
         if (!manager.canManageStore(storeId)) {
-            throw new BusinessException("Bạn không có quyền quản lý cửa hàng này");
+            log.error("Manager {} cannot access store {}. Managed stores: {}", 
+                manager.getUsername(), storeId, 
+                manager.getManagedStores().stream().map(Store::getId).collect(Collectors.toList()));
+            throw new BusinessException("Bạn không có quyền quản lý đơn hàng của chi nhánh này. Vui lòng liên hệ Admin để được gán chi nhánh.");
         }
     }
     
@@ -348,21 +351,31 @@ public class ManagerService {
         User manager = getCurrentManager();
         List<Long> storeIds = getManagedStoreIds(manager);
         
+        log.info("=== UPDATE ORDER STATUS ===");
+        log.info("Manager: {}, Role: {}", manager.getUsername(), manager.getRole());
+        log.info("Order ID: {}, New Status: {}", orderId, newStatus);
+        log.info("Managed Store IDs: {}", storeIds == null ? "ALL (ADMIN)" : storeIds);
+        
         // Lấy order để kiểm tra quyền
         var order = orderRepository.findById(orderId)
             .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         
+        log.info("Order current status: {}, Store ID: {}", order.getStatus(), order.getStore().getId());
+        
         // Nếu Manager không có store nào được gán -> không có quyền
         if (storeIds != null && storeIds.isEmpty()) {
+            log.error("Manager {} has no assigned stores!", manager.getUsername());
             throw new BusinessException("Bạn chưa được gán quản lý chi nhánh nào");
         }
         
         // Kiểm tra quyền truy cập store (ADMIN bỏ qua)
         if (storeIds != null) {
+            log.info("Checking store access for store ID: {}", order.getStore().getId());
             validateStoreAccess(manager, order.getStore().getId());
         }
         
-        log.info("Manager {} updating order {} to status {}", manager.getUsername(), orderId, newStatus);
+        log.info("Manager {} updating order {} from {} to {}", 
+            manager.getUsername(), orderId, order.getStatus(), newStatus);
         return orderService.updateOrderStatus(orderId, newStatus);
     }
     

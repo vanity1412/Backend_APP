@@ -602,21 +602,42 @@ public class OrderService {
 
         validateStatusTransition(order.getStatus(), newStatus);
 
-        Long userId = order.getUser().getId();
+        // Lấy userId an toàn - có thể null nếu user đã bị xóa
+        Long userId = order.getUser() != null ? order.getUser().getId() : null;
+        
         order.setStatus(newStatus);
         order = orderRepository.save(order);
         orderRepository.flush();
 
+        OrderDto orderDto = mapToDto(order);
+        
+        // Xử lý các tác vụ phụ sau khi commit transaction thành công
+        // Sử dụng final variables để dùng trong lambda
+        final Order finalOrder = order;
+        final Long finalUserId = userId;
+        final OrderDto finalOrderDto = orderDto;
+        
+        // Chạy các tác vụ phụ trong thread riêng để không ảnh hưởng transaction
+        new Thread(() -> {
+            processPostStatusUpdate(finalOrder, finalOrderDto, newStatus, finalUserId, orderId);
+        }).start();
+
+        return orderDto;
+    }
+    
+    /**
+     * Xử lý các tác vụ sau khi cập nhật trạng thái (notifications, points, email...)
+     * Chạy ngoài transaction chính để tránh rollback
+     */
+    private void processPostStatusUpdate(Order order, OrderDto orderDto, OrderStatus newStatus, Long userId, Long orderId) {
         // 🛡️ Log activity - Cập nhật trạng thái đơn hàng
         try {
-            if (newStatus == OrderStatus.CANCELED) {
+            if (newStatus == OrderStatus.CANCELED && userId != null) {
                 userMonitoringService.logOrderCancel(userId, orderId, null);
             }
         } catch (Exception e) {
             log.error("Failed to log order status update to monitoring", e);
         }
-
-        OrderDto orderDto = mapToDto(order);
 
         // WebSocket
         try {
@@ -626,11 +647,11 @@ public class OrderService {
         }
 
         // Loyalty Points & Email (nếu DONE)
-        if (newStatus == OrderStatus.DONE) {
+        if (newStatus == OrderStatus.DONE && userId != null) {
             // 🛡️ Log activity - Thanh toán thành công
             try {
                 userMonitoringService.logPaymentSuccess(userId, orderId, 
-                    order.getPaymentMethod().name(), null);
+                    order.getPaymentMethod() != null ? order.getPaymentMethod().name() : "UNKNOWN", null);
             } catch (Exception e) {
                 log.error("Failed to log payment success to monitoring", e);
             }
@@ -638,17 +659,19 @@ public class OrderService {
             try {
                 // [LOGIC MỚI] Lấy user để tính điểm theo tier multiplier
                 User user = order.getUser();
-                int basePoints = 1;
-                int earnedPoints = memberTierService.calculatePointsEarned(user.getMemberTier(), basePoints);
+                if (user != null) {
+                    int basePoints = 1;
+                    int earnedPoints = memberTierService.calculatePointsEarned(user.getMemberTier(), basePoints);
 
-                // Sử dụng native update query để tránh lỗi Hibernate
-                int updated = userRepository.addPoints(userId, earnedPoints);
-                if (updated > 0) {
-                    log.info("Added {} loyalty points (base: {}, tier: {}) for userId {}",
-                            earnedPoints, basePoints, user.getMemberTier(), userId);
+                    // Sử dụng native update query để tránh lỗi Hibernate
+                    int updated = userRepository.addPoints(userId, earnedPoints);
+                    if (updated > 0) {
+                        log.info("Added {} loyalty points (base: {}, tier: {}) for userId {}",
+                                earnedPoints, basePoints, user.getMemberTier(), userId);
 
-                    // Kiểm tra và nâng cấp tier nếu đủ điểm
-                    memberTierService.checkAndUpgradeTierByUserId(userId);
+                        // Kiểm tra và nâng cấp tier nếu đủ điểm
+                        memberTierService.checkAndUpgradeTierByUserId(userId);
+                    }
                 }
             } catch (Exception e) {
                 log.error("Failed to add loyalty points", e);
@@ -665,7 +688,8 @@ public class OrderService {
                 var completions = challengeService.processOrderChallenges(order);
                 if (!completions.isEmpty()) {
                     log.info("🎯 User {} completed {} challenge(s) from order #{}",
-                            order.getUser().getUsername(), completions.size(), orderId);
+                            order.getUser() != null ? order.getUser().getUsername() : "unknown", 
+                            completions.size(), orderId);
                 }
             } catch (Exception e) {
                 log.error("Failed to process challenges for order #{}", orderId, e);
@@ -674,8 +698,6 @@ public class OrderService {
 
         // [OneSignal] Notification cho User sở hữu đơn
         sendNotificationToUser(order, newStatus);
-
-        return orderDto;
     }
 
     /**
@@ -711,6 +733,12 @@ public class OrderService {
      */
     private void sendNotificationToUser(Order order, OrderStatus status) {
         try {
+            // Kiểm tra user có tồn tại không
+            if (order.getUser() == null) {
+                log.warn("Cannot send notification - order {} has no user", order.getId());
+                return;
+            }
+            
             String userId = String.valueOf(order.getUser().getId());
             String title = "Cập nhật đơn hàng #" + order.getId();
             String content = "";
@@ -748,38 +776,54 @@ public class OrderService {
     // ==================================================================================
 
     private void validateStatusTransition(OrderStatus currentStatus, OrderStatus newStatus) {
+        // Flow hợp lý cho đơn hàng:
+        // PENDING → MAKING → SHIPPING/READY → DONE
+        // Chỉ có thể hủy khi: PENDING (chưa bắt đầu làm)
+        // KHÔNG thể hủy khi: MAKING, SHIPPING, READY, DONE, CANCELED
+        
         if (currentStatus == OrderStatus.PENDING) {
+            // Từ PENDING: có thể chuyển sang MAKING hoặc hủy
             if (newStatus != OrderStatus.MAKING && newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order transition invalid from PENDING");
+                throw new BusinessException("Đơn hàng đang chờ xử lý chỉ có thể chuyển sang 'Đang làm' hoặc 'Hủy'");
             }
         }
         else if (currentStatus == OrderStatus.MAKING) {
-            if (newStatus != OrderStatus.SHIPPING &&
-                    newStatus != OrderStatus.READY &&
-                    newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order transition invalid from MAKING");
+            // Từ MAKING: chỉ có thể chuyển sang SHIPPING (delivery) hoặc READY (pickup)
+            // KHÔNG cho hủy vì đã bắt đầu làm
+            if (newStatus != OrderStatus.SHIPPING && newStatus != OrderStatus.READY) {
+                throw new BusinessException("Đơn hàng đang làm chỉ có thể chuyển sang 'Đang giao' hoặc 'Sẵn sàng'. Không thể hủy đơn đã bắt đầu làm.");
             }
         }
         else if (currentStatus == OrderStatus.SHIPPING) {
-            if (newStatus != OrderStatus.DONE && newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order transition invalid from SHIPPING");
+            // Từ SHIPPING: chỉ có thể chuyển sang DONE
+            if (newStatus != OrderStatus.DONE) {
+                throw new BusinessException("Đơn hàng đang giao chỉ có thể chuyển sang 'Hoàn thành'. Không thể hủy đơn đang giao.");
             }
         }
         else if (currentStatus == OrderStatus.READY) {
-            if (newStatus != OrderStatus.DONE && newStatus != OrderStatus.CANCELED) {
-                throw new BusinessException("Order transition invalid from READY");
+            // Từ READY: chỉ có thể chuyển sang DONE
+            if (newStatus != OrderStatus.DONE) {
+                throw new BusinessException("Đơn hàng sẵn sàng chỉ có thể chuyển sang 'Hoàn thành'. Không thể hủy đơn đã làm xong.");
             }
         }
         else if (currentStatus == OrderStatus.DONE || currentStatus == OrderStatus.CANCELED) {
-            throw new BusinessException("Cannot change status of completed or canceled order");
+            throw new BusinessException("Không thể thay đổi trạng thái đơn hàng đã hoàn thành hoặc đã hủy");
         }
     }
 
     private OrderDto mapToDto(Order order) {
         OrderDto dto = new OrderDto();
         dto.setId(order.getId());
-        dto.setUserId(order.getUser().getId());
-        dto.setUserName(order.getUser().getFullName());
+        
+        // Xử lý user có thể null (nếu user đã bị xóa)
+        if (order.getUser() != null) {
+            dto.setUserId(order.getUser().getId());
+            dto.setUserName(order.getUser().getFullName());
+        } else {
+            dto.setUserId(null);
+            dto.setUserName("Người dùng đã xóa");
+        }
+        
         dto.setStoreId(order.getStore().getId());
         dto.setStoreName(order.getStore().getStoreName());
         dto.setType(order.getType());
@@ -792,12 +836,14 @@ public class OrderService {
         dto.setFinalPrice(order.getFinalPrice());
         dto.setPaymentMethod(order.getPaymentMethod());
         dto.setPromotionCode(order.getPromotion() != null ? order.getPromotion().getCode() : null);
-        dto.setCreatedAt(order.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
-        dto.setUpdatedAt(order.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
+        dto.setCreatedAt(order.getCreatedAt() != null ? order.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() : null);
+        dto.setUpdatedAt(order.getUpdatedAt() != null ? order.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() : null);
 
-        List<OrderItemDto> itemDtos = order.getItems().stream()
-                .map(this::mapItemToDto)
-                .collect(Collectors.toList());
+        List<OrderItemDto> itemDtos = order.getItems() != null 
+                ? order.getItems().stream()
+                    .map(this::mapItemToDto)
+                    .collect(Collectors.toList())
+                : new java.util.ArrayList<>();
         dto.setItems(itemDtos);
 
         return dto;
