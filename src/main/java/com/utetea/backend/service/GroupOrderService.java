@@ -33,6 +33,8 @@ public class GroupOrderService {
     private final DrinkToppingRepository drinkToppingRepository;
     private final OrderService orderService;
     private final GroupChatService groupChatService;
+    private final PromotionRepository promotionRepository;
+    private final MemberTierService memberTierService;
     
     private static final String INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int INVITE_CODE_LENGTH = 6;
@@ -46,17 +48,37 @@ public class GroupOrderService {
         List<GroupOrder> activeOrders = groupOrderRepository.findByMemberUserIdAndStatus(
             host.getId(), GroupOrderStatus.OPEN);
         if (!activeOrders.isEmpty()) {
-            // Trả về phiên đang hoạt động thay vì throw exception
-            log.info("User {} already has active group order, returning existing one", username);
-            return mapToDto(activeOrders.get(0));
+            GroupOrder existingOrder = activeOrders.get(0);
+            // Kiểm tra xem phiên có hết hạn chưa
+            if (existingOrder.getExpiresAt() != null && 
+                existingOrder.getExpiresAt().isBefore(LocalDateTime.now())) {
+                // Phiên đã hết hạn, cập nhật status và cho phép tạo mới
+                existingOrder.setStatus(GroupOrderStatus.EXPIRED);
+                groupOrderRepository.save(existingOrder);
+                log.info("Expired group order {} for user {}", existingOrder.getId(), username);
+            } else {
+                // Phiên vẫn còn hiệu lực, trả về phiên đang hoạt động
+                log.info("User {} already has active group order, returning existing one", username);
+                return getGroupOrderById(existingOrder.getId());
+            }
         }
         
         // Kiểm tra cả phiên LOCKED
         List<GroupOrder> lockedOrders = groupOrderRepository.findByMemberUserIdAndStatus(
             host.getId(), GroupOrderStatus.LOCKED);
         if (!lockedOrders.isEmpty()) {
-            log.info("User {} has locked group order, returning it", username);
-            return mapToDto(lockedOrders.get(0));
+            GroupOrder lockedOrder = lockedOrders.get(0);
+            // Kiểm tra xem phiên LOCKED có hết hạn chưa (cho phép 30 phút thêm để thanh toán)
+            if (lockedOrder.getExpiresAt() != null && 
+                lockedOrder.getExpiresAt().plusMinutes(30).isBefore(LocalDateTime.now())) {
+                // Phiên LOCKED đã quá hạn thanh toán, cập nhật status
+                lockedOrder.setStatus(GroupOrderStatus.EXPIRED);
+                groupOrderRepository.save(lockedOrder);
+                log.info("Expired locked group order {} for user {}", lockedOrder.getId(), username);
+            } else {
+                log.info("User {} has locked group order, returning it", username);
+                return getGroupOrderById(lockedOrder.getId());
+            }
         }
         
         GroupOrder groupOrder = new GroupOrder();
@@ -728,5 +750,169 @@ public class GroupOrderService {
         dto.setTotalPrice(total);
         
         return dto;
+    }
+    
+    /**
+     * Preview bill cho đơn hàng nhóm trước khi thanh toán
+     */
+    @Transactional(readOnly = true)
+    public BillPreviewDto previewGroupOrderBill(String username, Long groupOrderId, 
+                                                 PreviewGroupOrderBillRequest request) {
+        User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
+        
+        GroupOrder groupOrder = groupOrderRepository.findByIdWithMembers(groupOrderId)
+            .orElseThrow(() -> new ResourceNotFoundException("GroupOrder", "id", groupOrderId));
+        
+        // Only host can preview bill
+        if (!groupOrder.getHostUser().getId().equals(user.getId())) {
+            throw new BusinessException("Chỉ host mới có thể xem bill", HttpStatus.FORBIDDEN);
+        }
+        
+        // Validate status
+        if (groupOrder.getStatus() != GroupOrderStatus.OPEN && 
+            groupOrder.getStatus() != GroupOrderStatus.LOCKED) {
+            throw new BusinessException("Phiên không ở trạng thái có thể thanh toán");
+        }
+        
+        // Validate store
+        if (groupOrder.getStore() == null) {
+            throw new BusinessException("Vui lòng chọn chi nhánh trước khi xem bill");
+        }
+        
+        // Fetch items
+        List<GroupOrderItem> items = itemRepository.findByGroupOrderIdWithDetails(groupOrderId);
+        if (items.isEmpty()) {
+            throw new BusinessException("Không có món nào trong đơn hàng");
+        }
+        
+        Store store = groupOrder.getStore();
+        
+        // Calculate items
+        List<BillPreviewDto.BillItemDto> billItems = new ArrayList<>();
+        BigDecimal subtotal = BigDecimal.ZERO;
+        
+        for (GroupOrderItem item : items) {
+            List<String> toppingNames = new ArrayList<>();
+            if (item.getToppingsSnapshot() != null && !item.getToppingsSnapshot().isEmpty()) {
+                for (String topping : item.getToppingsSnapshot().split(",")) {
+                    toppingNames.add(topping.trim());
+                }
+            }
+            
+            billItems.add(BillPreviewDto.BillItemDto.builder()
+                .drinkName(item.getDrinkNameSnapshot())
+                .drinkImage(item.getDrink().getImageUrl())
+                .sizeName(item.getSizeName())
+                .toppings(toppingNames)
+                .quantity(item.getQuantity())
+                .unitPrice(item.getUnitPrice())
+                .totalPrice(item.getItemPrice())
+                .note("[" + item.getUser().getFullName() + "] " + 
+                      (item.getNote() != null ? item.getNote() : ""))
+                .build());
+            
+            subtotal = subtotal.add(item.getItemPrice());
+        }
+        
+        // Calculate voucher discount
+        BigDecimal voucherDiscount = BigDecimal.ZERO;
+        String promotionCode = null;
+        
+        if (request != null && request.getPromotionCode() != null && !request.getPromotionCode().isEmpty()) {
+            Promotion promotion = promotionRepository.findByCode(request.getPromotionCode()).orElse(null);
+            if (promotion != null && promotion.getIsActive()) {
+                LocalDateTime now = LocalDateTime.now();
+                if (!promotion.getStartDate().isAfter(now) && !promotion.getEndDate().isBefore(now)) {
+                    if (subtotal.compareTo(promotion.getMinOrderValue()) >= 0) {
+                        if (promotion.getDiscountType() == DiscountType.PERCENT) {
+                            voucherDiscount = subtotal.multiply(promotion.getDiscountValue())
+                                .divide(BigDecimal.valueOf(100));
+                            if (promotion.getMaxDiscountAmount() != null && 
+                                voucherDiscount.compareTo(promotion.getMaxDiscountAmount()) > 0) {
+                                voucherDiscount = promotion.getMaxDiscountAmount();
+                            }
+                        } else {
+                            voucherDiscount = promotion.getDiscountValue();
+                        }
+                        promotionCode = promotion.getCode();
+                    }
+                }
+            }
+        }
+        
+        // Calculate tier discount (based on host's tier)
+        BigDecimal tierDiscountAmount = memberTierService.calculateTierDiscount(user.getMemberTier(), subtotal);
+        String tierName = user.getMemberTier() != null ? user.getMemberTier().name() : null;
+        
+        // Calculate shipping fee - Sử dụng phí ship từ client (tính theo VietnamProvinces)
+        BigDecimal shippingFee = BigDecimal.ZERO;
+        BigDecimal originalShippingFee = BigDecimal.ZERO;
+        boolean isFreeShipping = false;
+        String freeShippingReason = null;
+        
+        if (groupOrder.getOrderType() == OrderType.DELIVERY) {
+            // Use shipping fee from client (calculated by VietnamProvinces)
+            if (request != null && request.getShippingFee() != null && request.getShippingFee() > 0) {
+                originalShippingFee = BigDecimal.valueOf(request.getShippingFee());
+            }
+            
+            // Check free shipping eligibility
+            if (originalShippingFee.compareTo(BigDecimal.ZERO) > 0 &&
+                memberTierService.isEligibleForFreeShipping(user.getMemberTier(), subtotal)) {
+                isFreeShipping = true;
+                shippingFee = BigDecimal.ZERO;
+                freeShippingReason = "Miễn phí ship cho hạng " + user.getMemberTier().name();
+            } else {
+                shippingFee = originalShippingFee;
+            }
+        }
+        
+        // Total discount
+        BigDecimal totalDiscount = voucherDiscount.add(tierDiscountAmount);
+        
+        // Final price
+        BigDecimal finalPrice = subtotal.add(shippingFee).subtract(totalDiscount);
+        if (finalPrice.compareTo(BigDecimal.ZERO) < 0) {
+            finalPrice = BigDecimal.ZERO;
+        }
+        
+        return BillPreviewDto.builder()
+            .customerName(user.getFullName())
+            .customerPhone(user.getPhone())
+            .customerEmail(user.getEmail())
+            .storeId(store.getId())
+            .storeName(store.getStoreName())
+            .storeAddress(store.getAddress())
+            .orderType(groupOrder.getOrderType() != null ? groupOrder.getOrderType().name() : "PICKUP")
+            .deliveryAddress(groupOrder.getOrderType() == OrderType.DELIVERY ? 
+                groupOrder.getDeliveryAddress() : "Tại Cửa Hàng")
+            .paymentMethod(request != null && request.getPaymentMethod() != null ? 
+                getPaymentMethodDisplayName(request.getPaymentMethod()) : "Chưa chọn")
+            .items(billItems)
+            .subtotal(subtotal)
+            .shippingFee(shippingFee)
+            .originalShippingFee(originalShippingFee)
+            .freeShipping(isFreeShipping)
+            .freeShippingReason(freeShippingReason)
+            .promotionCode(promotionCode)
+            .voucherDiscount(voucherDiscount)
+            .tierName(tierName)
+            .tierDiscountAmount(tierDiscountAmount)
+            .totalDiscount(totalDiscount)
+            .finalPrice(finalPrice)
+            .build();
+    }
+    
+    private String getPaymentMethodDisplayName(PaymentMethod paymentMethod) {
+        if (paymentMethod == null) return "Khác";
+        switch (paymentMethod) {
+            case COD: return "Tiền mặt";
+            case VNPAY: return "VNPay";
+            case VIETQR: return "VietQR";
+            case MOMO: return "MoMo";
+            case PAYPAL: return "PayPal";
+            default: return "Khác";
+        }
     }
 }

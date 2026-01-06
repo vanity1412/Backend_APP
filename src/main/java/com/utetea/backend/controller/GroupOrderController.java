@@ -148,6 +148,16 @@ public class GroupOrderController {
         return ResponseEntity.ok(ApiResponse.success("Đặt hàng thành công", result));
     }
     
+    @PostMapping("/{id}/preview-bill")
+    @Operation(summary = "Xem trước bill đơn hàng nhóm (chỉ host)")
+    public ResponseEntity<ApiResponse<BillPreviewDto>> previewGroupOrderBill(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long id,
+            @RequestBody(required = false) PreviewGroupOrderBillRequest request) {
+        BillPreviewDto result = groupOrderService.previewGroupOrderBill(userDetails.getUsername(), id, request);
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+    
     @DeleteMapping("/{id}")
     @Operation(summary = "Hủy phiên đặt hàng nhóm (chỉ host)")
     public ResponseEntity<ApiResponse<Void>> cancelGroupOrder(
