@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import com.utetea.backend.filter.BlockedIPFilter;
+import com.utetea.backend.filter.WhitelistIPFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -34,6 +35,7 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final BlockedIPFilter blockedIPFilter;
+    private final WhitelistIPFilter whitelistIPFilter;
     
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -96,6 +98,9 @@ public class SecurityConfig {
                         // 🚫 Blocked IP endpoints - CHỈ ADMIN
                         .requestMatchers("/api/blocked-ips/**").hasRole("ADMIN")
                         
+                        // 🔓 Whitelist IP endpoints - CHỈ ADMIN
+                        .requestMatchers("/api/whitelist-ips/**").hasRole("ADMIN")
+                        
                         // Admin only endpoints - quản lý cao nhất
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         
@@ -135,7 +140,8 @@ public class SecurityConfig {
                 )
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(blockedIPFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(whitelistIPFilter, JwtAuthenticationFilter.class);
         
         return http.build();
     }
