@@ -36,4 +36,10 @@ public class GroupOrderDto {
     
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    
+    /**
+     * Flag để phân biệt phiên mới tạo (true) hay phiên cũ được trả về (false)
+     * Dùng khi gọi API createGroupOrder
+     */
+    private Boolean isNewSession;
 }

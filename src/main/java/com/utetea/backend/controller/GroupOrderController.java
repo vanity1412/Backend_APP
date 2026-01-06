@@ -27,7 +27,13 @@ public class GroupOrderController {
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody CreateGroupOrderRequest request) {
         GroupOrderDto result = groupOrderService.createGroupOrder(userDetails.getUsername(), request);
-        return ResponseEntity.ok(ApiResponse.success("Tạo phiên đặt hàng nhóm thành công", result));
+        
+        // Phân biệt message dựa trên isNewSession
+        String message = Boolean.TRUE.equals(result.getIsNewSession()) 
+            ? "Tạo phiên đặt hàng nhóm thành công" 
+            : "Bạn đã có phiên đang hoạt động";
+        
+        return ResponseEntity.ok(ApiResponse.success(message, result));
     }
     
     @PostMapping("/join")

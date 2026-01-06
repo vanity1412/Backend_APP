@@ -39,6 +39,10 @@ public class GroupOrderService {
     private static final String INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int INVITE_CODE_LENGTH = 6;
 
+    /**
+     * Tạo phiên đặt hàng nhóm mới
+     * @return GroupOrderDto với isNewSession = true nếu tạo mới, false nếu trả về phiên cũ
+     */
     @Transactional
     public GroupOrderDto createGroupOrder(String username, CreateGroupOrderRequest request) {
         User host = userRepository.findByUsername(username)
@@ -57,9 +61,11 @@ public class GroupOrderService {
                 groupOrderRepository.save(existingOrder);
                 log.info("Expired group order {} for user {}", existingOrder.getId(), username);
             } else {
-                // Phiên vẫn còn hiệu lực, trả về phiên đang hoạt động
+                // Phiên vẫn còn hiệu lực, trả về phiên đang hoạt động với flag isNewSession = false
                 log.info("User {} already has active group order, returning existing one", username);
-                return getGroupOrderById(existingOrder.getId());
+                GroupOrderDto dto = getGroupOrderById(existingOrder.getId());
+                dto.setIsNewSession(false);
+                return dto;
             }
         }
         
@@ -77,7 +83,9 @@ public class GroupOrderService {
                 log.info("Expired locked group order {} for user {}", lockedOrder.getId(), username);
             } else {
                 log.info("User {} has locked group order, returning it", username);
-                return getGroupOrderById(lockedOrder.getId());
+                GroupOrderDto dto = getGroupOrderById(lockedOrder.getId());
+                dto.setIsNewSession(false);
+                return dto;
             }
         }
         
@@ -111,8 +119,10 @@ public class GroupOrderService {
         log.info("Created group order {} with invite code {} by user {}", 
             groupOrder.getId(), groupOrder.getInviteCode(), username);
         
-        // Fetch lại với đầy đủ thông tin
-        return getGroupOrderById(groupOrder.getId());
+        // Fetch lại với đầy đủ thông tin và đánh dấu là phiên mới
+        GroupOrderDto dto = getGroupOrderById(groupOrder.getId());
+        dto.setIsNewSession(true);
+        return dto;
     }
 
     @Transactional
