@@ -194,4 +194,69 @@ public class OrderController {
 
         return ResponseEntity.ok(ApiResponse.success("Order status updated", order));
     }
+    
+    /**
+     * User hủy đơn hàng của mình
+     * Chỉ cho phép hủy khi đơn hàng đang ở trạng thái PENDING
+     */
+    @PostMapping("/{orderId}/cancel")
+    public ResponseEntity<ApiResponse<String>> cancelOrder(
+            Authentication authentication,
+            @PathVariable Long orderId) {
+        User currentUser = getAuthenticatedUser(authentication);
+        
+        // Lấy thông tin đơn hàng
+        OrderDto order = orderService.getOrderById(orderId);
+        OrderStatus currentStatus = order.getStatus();
+        
+        // Kiểm tra quyền: User chỉ được hủy đơn của mình, Manager/Admin có thể hủy bất kỳ đơn nào
+        boolean isManagerOrAdmin = currentUser.getRole() == UserRole.MANAGER || currentUser.getRole() == UserRole.ADMIN;
+        boolean isOwner = currentUser.getId().equals(order.getUserId());
+        
+        if (!isManagerOrAdmin && !isOwner) {
+            throw new AccessDeniedException("Bạn không có quyền hủy đơn hàng của người khác");
+        }
+        
+        // Kiểm tra nếu đơn đã bị hủy rồi
+        if (currentStatus == OrderStatus.CANCELED) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error("Đơn hàng này đã được hủy trước đó"));
+        }
+        
+        // Kiểm tra nếu đơn đã hoàn thành
+        if (currentStatus == OrderStatus.DONE) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error("Không thể hủy đơn hàng đã hoàn thành"));
+        }
+        
+        // Kiểm tra trạng thái: User chỉ được hủy khi đơn đang PENDING
+        // Manager/Admin có thể hủy ở trạng thái PENDING hoặc MAKING
+        if (!isManagerOrAdmin && currentStatus != OrderStatus.PENDING) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error("Chỉ có thể hủy đơn hàng khi đang ở trạng thái chờ xử lý"));
+        }
+        
+        if (isManagerOrAdmin && currentStatus != OrderStatus.PENDING && currentStatus != OrderStatus.MAKING) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error("Không thể hủy đơn hàng đang giao hoặc đã hoàn thành"));
+        }
+        
+        // Cập nhật trạng thái đơn hàng thành CANCELED
+        orderService.updateOrderStatus(orderId, OrderStatus.CANCELED);
+        
+        // Gửi thông báo cho user
+        try {
+            String userId = String.valueOf(order.getUserId());
+            String title = "Đơn hàng #" + orderId + " đã bị hủy";
+            String content = isOwner 
+                ? "Bạn đã hủy đơn hàng thành công." 
+                : "Đơn hàng của bạn đã bị hủy bởi cửa hàng.";
+            oneSignalService.sendToUser(userId, title, content);
+        } catch (Exception e) {
+            log.error("Failed to send cancel notification for order " + orderId, e);
+        }
+        
+        return ResponseEntity.ok(ApiResponse.success("Đã hủy đơn hàng thành công", "CANCELED"));
+    }
+
 }
