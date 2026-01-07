@@ -59,7 +59,7 @@ public class HttpSmsService {
             String timeStamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM HH:mm:ss"));
 
             // Nội dung tin nhắn sẽ luôn khác nhau nhờ giây thay đổi liên tục
-            String messageContent = "Ma OTP Houjicha: " + otpCode + ". Date: " + timeStamp;
+            String messageContent = "Ma OTP Houjicha: " + otpCode + ". Date: " + timeStamp + ". g0P9cZJc428";
 
             // Chuẩn bị payload
             Map<String, Object> payload = new HashMap<>();
@@ -134,7 +134,7 @@ public class HttpSmsService {
         }
         if (!cleanPhone.startsWith("+")) {
             // Nếu nhập thiếu cả 0 lẫn +84 (hiếm gặp), mặc định thêm +84
-            return "+84" + cleanPhone;
+            return cleanPhone;
         }
         return cleanPhone;
     }
