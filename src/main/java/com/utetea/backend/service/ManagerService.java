@@ -328,20 +328,27 @@ public class ManagerService {
             return Page.empty(pageable);
         }
         
+        // Sắp xếp theo thứ tự: PENDING -> MAKING -> SHIPPING -> READY -> DONE -> CANCELED
+        // Trong mỗi trạng thái: sắp xếp từ cũ đến mới (ASC)
         if (storeIds == null) {
             // ADMIN - xem tất cả
             if (status == null) {
-                return orderService.getAllOrders(pageable);
+                // Sắp xếp theo priority status + createdAt ASC
+                return orderRepository.findAllOrderByStatusPriorityAndCreatedAtAsc(pageable)
+                    .map(order -> orderService.getOrderById(order.getId()));
             }
-            return orderRepository.findByStatusOrderByCreatedAtDesc(status, pageable)
+            // Khi filter theo status cụ thể: sắp xếp từ cũ đến mới
+            return orderRepository.findByStatusOrderByCreatedAtAsc(status, pageable)
                 .map(order -> orderService.getOrderById(order.getId()));
         } else {
             // Store Manager - chỉ xem stores được gán
             if (status == null) {
-                return orderRepository.findByStoreIdInOrderByCreatedAtDesc(storeIds, pageable)
+                // Sắp xếp theo priority status + createdAt ASC
+                return orderRepository.findByStoreIdInOrderByStatusPriorityAndCreatedAtAsc(storeIds, pageable)
                     .map(order -> orderService.getOrderById(order.getId()));
             }
-            return orderRepository.findByStoreIdInAndStatusOrderByCreatedAtDesc(storeIds, status, pageable)
+            // Khi filter theo status cụ thể: sắp xếp từ cũ đến mới
+            return orderRepository.findByStoreIdInAndStatusOrderByCreatedAtAsc(storeIds, status, pageable)
                 .map(order -> orderService.getOrderById(order.getId()));
         }
     }
