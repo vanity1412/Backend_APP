@@ -56,10 +56,11 @@ public class GroupOrderService {
             // Kiểm tra xem phiên có hết hạn chưa
             if (existingOrder.getExpiresAt() != null && 
                 existingOrder.getExpiresAt().isBefore(LocalDateTime.now())) {
-                // Phiên đã hết hạn, cập nhật status và cho phép tạo mới
+                // Phiên đã hết hạn, cập nhật status
                 existingOrder.setStatus(GroupOrderStatus.EXPIRED);
                 groupOrderRepository.save(existingOrder);
                 log.info("Expired group order {} for user {}", existingOrder.getId(), username);
+                // Tiếp tục tạo phiên mới (không return ở đây)
             } else {
                 // Phiên vẫn còn hiệu lực, trả về phiên đang hoạt động với flag isNewSession = false
                 log.info("User {} already has active group order, returning existing one", username);
@@ -81,6 +82,7 @@ public class GroupOrderService {
                 lockedOrder.setStatus(GroupOrderStatus.EXPIRED);
                 groupOrderRepository.save(lockedOrder);
                 log.info("Expired locked group order {} for user {}", lockedOrder.getId(), username);
+                // Tiếp tục tạo phiên mới (không return ở đây)
             } else {
                 log.info("User {} has locked group order, returning it", username);
                 GroupOrderDto dto = getGroupOrderById(lockedOrder.getId());
@@ -914,14 +916,14 @@ public class GroupOrderService {
             .build();
     }
     
-    private String getPaymentMethodDisplayName(PaymentMethod paymentMethod) {
-        if (paymentMethod == null) return "Khác";
-        switch (paymentMethod) {
-            case COD: return "Tiền mặt";
-            case VNPAY: return "VNPay";
-            case VIETQR: return "VietQR";
-            case MOMO: return "MoMo";
-            case PAYPAL: return "PayPal";
+    private String getPaymentMethodDisplayName(String paymentMethod) {
+        if (paymentMethod == null || paymentMethod.isEmpty()) return "Khác";
+        switch (paymentMethod.toUpperCase()) {
+            case "COD": return "Tiền mặt";
+            case "VNPAY": return "VNPay";
+            case "VIETQR": return "VietQR";
+            case "MOMO": return "MoMo";
+            case "PAYPAL": return "PayPal";
             default: return "Khác";
         }
     }

@@ -1,12 +1,12 @@
 package com.utetea.backend.dto;
 
-import com.utetea.backend.model.PaymentMethod;
 import lombok.*;
 
 @Data @NoArgsConstructor @AllArgsConstructor
 public class PreviewGroupOrderBillRequest {
     
-    private PaymentMethod paymentMethod;
+    // Sử dụng String thay vì PaymentMethod enum để tương thích với client
+    private String paymentMethod;
     
     private String promotionCode;
     

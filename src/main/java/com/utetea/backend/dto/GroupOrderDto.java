@@ -1,5 +1,6 @@
 package com.utetea.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.utetea.backend.model.GroupOrderStatus;
 import com.utetea.backend.model.OrderType;
 import lombok.*;
@@ -24,6 +25,7 @@ public class GroupOrderDto {
     private OrderType orderType;
     private String deliveryAddress;
     
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime expiresAt;
     private Integer maxMembers;
     private Integer currentMemberCount;
@@ -34,7 +36,9 @@ public class GroupOrderDto {
     private List<GroupOrderMemberDto> members;
     private List<GroupOrderItemDto> items;
     
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime updatedAt;
     
     /**
