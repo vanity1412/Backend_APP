@@ -88,7 +88,7 @@ public class AuthController {
     }
     
     @PostMapping("/login")
-    @Operation(summary = "Đăng nhập", description = "Login với username/phone + password, trả về JWT token")
+    @Operation(summary = "Đăng nhập", description = "Login với username + password, trả về JWT token")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = authService.login(request);
         return ResponseEntity.ok(ApiResponse.success("Login successful", response));
