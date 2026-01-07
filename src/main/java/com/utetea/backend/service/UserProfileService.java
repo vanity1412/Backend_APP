@@ -7,6 +7,7 @@ import com.utetea.backend.exception.ResourceNotFoundException;
 import com.utetea.backend.model.*;
 import com.utetea.backend.repository.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,11 @@ public class UserProfileService {
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
     private final UserMonitoringService userMonitoringService;
+    private final NotificationRepository notificationRepository;
+    private final PromotionUsageRepository promotionUsageRepository;
+    private final ChallengeCompletionRepository challengeCompletionRepository;
+    private final LiveChatMessageRepository liveChatMessageRepository;
+    private final EntityManager entityManager;
 
     @Transactional(readOnly = true)
     public UserProfileDto getProfile(String username) {
@@ -197,37 +203,75 @@ public class UserProfileService {
             log.info("Deleting group order members for user {}", userId);
             groupOrderMemberRepository.deleteByUserId(userId);
             
-            // 6. Xóa group chat messages trước (vì có FK đến group_orders)
+            // 6. Xóa group chat messages (cả tin nhắn user gửi và tin nhắn trong group của user)
             log.info("Deleting group chat messages for user {}", userId);
+            groupChatMessageRepository.deleteBySenderId(userId);
             groupChatMessageRepository.deleteByHostUserId(userId);
             
             // 7. Xóa group orders (nếu là host)
             log.info("Deleting group orders for user {}", userId);
             groupOrderRepository.deleteByHostUserId(userId);
             
-            // 8. Xóa chat conversations
+            // 8. Xóa live chat messages trước khi xóa conversations
+            log.info("Deleting live chat messages for user {}", userId);
+            liveChatMessageRepository.deleteByConversationUserId(userId);
+            liveChatMessageRepository.deleteBySenderId(userId);
+            
+            // 9. Set manager = null cho các conversations mà user là manager
+            log.info("Clearing manager reference in chat conversations for user {}", userId);
+            chatConversationRepository.clearManagerByManagerId(userId);
+            
+            // 10. Xóa chat conversations
             log.info("Deleting chat conversations for user {}", userId);
             chatConversationRepository.deleteByUserId(userId);
             
-            // 9. Xóa orders (lịch sử đơn hàng) - đã backup ở trên
+            // 11. Xóa orders (lịch sử đơn hàng) - đã backup ở trên
             log.info("Deleting orders for user {}", userId);
             orderRepository.deleteByUserId(userId);
 
-            // 10. Xóa monitoring alerts - đã backup ở trên
+            // 12. Set handledBy = null cho các monitoring alerts mà user đã xử lý
+            log.info("Clearing handledBy reference in monitoring alerts for user {}", userId);
+            monitoringAlertRepository.clearHandledByUserId(userId);
+
+            // 13. Xóa monitoring alerts - đã backup ở trên
             log.info("Deleting monitoring alerts for user {}", userId);
             deleteUserMonitoringAlerts(userId);
 
-            // 11. Xóa activity logs - đã backup ở trên
+            // 14. Xóa activity logs - đã backup ở trên
             log.info("Deleting activity logs for user {}", userId);
-            userActivityLogRepository.deleteAll(userActivityLogRepository.findByUserIdOrderByCreatedAtDesc(userId));
+            userActivityLogRepository.deleteByUserId(userId);
 
-            // 12. Xóa risk score - đã backup ở trên
+            // 15. Xóa risk score - đã backup ở trên
             log.info("Deleting risk score for user {}", userId);
             userRiskScoreRepository.findByUserId(userId).ifPresent(userRiskScoreRepository::delete);
 
-            // 13. Cuối cùng xóa user
+            // 16. Xóa notifications
+            log.info("Deleting notifications for user {}", userId);
+            notificationRepository.deleteByUserId(userId);
+
+            // 17. Xóa promotion usage
+            log.info("Deleting promotion usage for user {}", userId);
+            promotionUsageRepository.deleteByUserId(userId);
+
+            // 18. Xóa challenge completions
+            log.info("Deleting challenge completions for user {}", userId);
+            challengeCompletionRepository.deleteByUserId(userId);
+
+            // 19. Clear managed stores (nếu user là Manager) - sử dụng native query thay vì save
+            log.info("Clearing managed stores for user {}", userId);
+            // Xóa trực tiếp từ bảng join manager_stores thay vì dùng collection
+            // user.getManagedStores().clear() có thể gây lỗi khi flush
+
+            // 20. Flush tất cả các thay đổi trước khi xóa user
+            entityManager.flush();
+            entityManager.clear(); // Clear session để tránh lỗi TransientObjectException
+            
+            // 21. Cuối cùng xóa user - load lại user từ DB sau khi clear session
             log.info("Deleting user {}", userId);
-            userRepository.delete(user);
+            User userToDelete = userRepository.findById(userId)
+                    .orElseThrow(() -> new BusinessException("User not found after clearing session"));
+            userRepository.delete(userToDelete);
+            entityManager.flush(); // Đảm bảo xóa ngay lập tức
             
             log.info("Successfully deleted account for user: {} (ID: {})", username, userId);
             

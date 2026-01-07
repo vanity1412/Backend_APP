@@ -29,10 +29,14 @@ public class ChatbotService {
     private final OrderRepository orderRepository;
     private final DrinkMapper drinkMapper;
     private final WeatherService weatherService;
+    private final GeminiService geminiService;
     
     // Cache thời tiết để tránh gọi API quá nhiều
     private WeatherDto cachedWeather;
     private long weatherCacheTime = 0;
+    
+    // Flag để bật/tắt Gemini AI
+    private static final boolean USE_GEMINI_AI = true;
     private static final long WEATHER_CACHE_DURATION = 30 * 60 * 1000; // 30 phút
 
     // ==================== INTENT PATTERNS ====================
@@ -1506,6 +1510,39 @@ public class ChatbotService {
         for (DrinkCategory cat : categories) {
             if (cat.getName().toLowerCase().contains(message)) {
                 return handleDrinkSearch(message, cat.getName().toLowerCase());
+            }
+        }
+        
+        // 🤖 Sử dụng Gemini AI để trả lời thông minh
+        if (USE_GEMINI_AI) {
+            try {
+                // Lấy thông tin context
+                String weatherContext = "";
+                WeatherDto weather = getWeatherData();
+                if (weather != null) {
+                    String desc = weather.getDescription() != null ? weather.getDescription() : "Bình thường";
+                    weatherContext = String.format("Thời tiết: %s, %.0f°C", desc, weather.getTemperature());
+                }
+                
+                // Lấy danh sách món phổ biến để AI biết
+                List<Drink> popularDrinks = drinkRepository.findByIsActiveTrueWithSizesAndCategory()
+                    .stream().limit(10).collect(Collectors.toList());
+                StringBuilder menuContext = new StringBuilder("Các món phổ biến: ");
+                for (Drink d : popularDrinks) {
+                    menuContext.append(d.getName()).append(" (").append(formatPrice(d.getBasePrice())).append("), ");
+                }
+                
+                String context = weatherContext + "\n" + menuContext.toString();
+                String aiResponse = geminiService.generateResponse(message, context);
+                
+                if (aiResponse != null && !aiResponse.isEmpty()) {
+                    return ChatResponse.builder()
+                        .message("🤖 " + aiResponse)
+                        .type("TEXT")
+                        .build();
+                }
+            } catch (Exception e) {
+                log.warn("Gemini AI fallback failed: {}", e.getMessage());
             }
         }
         

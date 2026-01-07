@@ -2,6 +2,7 @@ package com.utetea.backend.repository;
 
 import com.utetea.backend.model.PromotionUsage;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
@@ -25,4 +26,8 @@ public interface PromotionUsageRepository extends JpaRepository<PromotionUsage, 
      */
     @Query("SELECT COUNT(pu) FROM PromotionUsage pu WHERE pu.promotion.id = :promotionId AND pu.user.id = :userId")
     long countByPromotionIdAndUserId(Long promotionId, Long userId);
+
+    // Xóa tất cả promotion usage của user (khi xóa tài khoản)
+    @Modifying
+    void deleteByUserId(Long userId);
 }

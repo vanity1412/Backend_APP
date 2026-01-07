@@ -4,6 +4,7 @@ import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.ChatRequest;
 import com.utetea.backend.dto.ChatResponse;
 import com.utetea.backend.service.ChatbotService;
+import com.utetea.backend.service.GeminiService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 public class ChatbotController {
 
     private final ChatbotService chatbotService;
+    private final GeminiService geminiService;
 
     @PostMapping("/message")
     public ResponseEntity<ApiResponse<ChatResponse>> sendMessage(@Valid @RequestBody ChatRequest request) {
@@ -29,6 +31,38 @@ public class ChatbotController {
             log.error("Chatbot error: ", e);
             ChatResponse errorResponse = ChatResponse.builder()
                 .message("Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.")
+                .type("TEXT")
+                .build();
+            return ResponseEntity.ok(ApiResponse.success(errorResponse));
+        }
+    }
+
+    /**
+     * Test endpoint cho Gemini AI trực tiếp
+     */
+    @PostMapping("/gemini")
+    public ResponseEntity<ApiResponse<ChatResponse>> testGemini(@Valid @RequestBody ChatRequest request) {
+        try {
+            log.info("Gemini test request: {}", request.getMessage());
+            String aiResponse = geminiService.chat(request.getMessage());
+            
+            if (aiResponse != null && !aiResponse.isEmpty()) {
+                ChatResponse response = ChatResponse.builder()
+                    .message("🤖 " + aiResponse)
+                    .type("TEXT")
+                    .build();
+                return ResponseEntity.ok(ApiResponse.success(response));
+            } else {
+                ChatResponse response = ChatResponse.builder()
+                    .message("❌ Gemini AI không phản hồi. Vui lòng thử lại.")
+                    .type("TEXT")
+                    .build();
+                return ResponseEntity.ok(ApiResponse.success(response));
+            }
+        } catch (Exception e) {
+            log.error("Gemini error: ", e);
+            ChatResponse errorResponse = ChatResponse.builder()
+                .message("❌ Lỗi Gemini AI: " + e.getMessage())
                 .type("TEXT")
                 .build();
             return ResponseEntity.ok(ApiResponse.success(errorResponse));

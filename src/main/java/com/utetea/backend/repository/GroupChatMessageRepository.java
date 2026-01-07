@@ -30,4 +30,8 @@ public interface GroupChatMessageRepository extends JpaRepository<GroupChatMessa
     @Modifying
     @Query("DELETE FROM GroupChatMessage m WHERE m.groupOrder.id IN (SELECT g.id FROM GroupOrder g WHERE g.hostUser.id = :userId)")
     void deleteByHostUserId(@Param("userId") Long userId);
+
+    // Xóa tất cả messages mà user đã gửi (khi xóa tài khoản)
+    @Modifying
+    void deleteBySenderId(Long senderId);
 }

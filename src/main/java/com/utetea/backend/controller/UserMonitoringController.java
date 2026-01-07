@@ -236,4 +236,60 @@ public class UserMonitoringController {
         private String actionTaken;
         private String note;
     }
+
+    // ==================== BACKUP DATA (USER ĐÃ XÓA) ====================
+
+    @GetMapping("/backup/activity-logs")
+    @Operation(summary = "Get Backup Activity Logs", description = "Lấy log hoạt động của user đã xóa")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.DeletedUserActivityLogDto>>> getBackupActivityLogs(
+            @RequestParam(required = false) Long deletedUserId,
+            @RequestParam(required = false) String deletedUsername,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("GET /api/monitoring/backup/activity-logs - userId: {}, username: {}", deletedUserId, deletedUsername);
+        
+        Pageable pageable = PageRequest.of(page, size);
+        Page<com.utetea.backend.dto.DeletedUserActivityLogDto> logs = 
+            monitoringService.getBackupActivityLogs(deletedUserId, deletedUsername, pageable);
+        
+        return ResponseEntity.ok(ApiResponse.success("Backup activity logs loaded", logs));
+    }
+
+    @GetMapping("/backup/alerts")
+    @Operation(summary = "Get Backup Monitoring Alerts", description = "Lấy cảnh báo của user đã xóa")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.DeletedUserMonitoringAlertDto>>> getBackupAlerts(
+            @RequestParam(required = false) Long deletedUserId,
+            @RequestParam(required = false) String deletedUsername,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("GET /api/monitoring/backup/alerts - userId: {}, username: {}", deletedUserId, deletedUsername);
+        
+        Pageable pageable = PageRequest.of(page, size);
+        Page<com.utetea.backend.dto.DeletedUserMonitoringAlertDto> alerts = 
+            monitoringService.getBackupAlerts(deletedUserId, deletedUsername, pageable);
+        
+        return ResponseEntity.ok(ApiResponse.success("Backup alerts loaded", alerts));
+    }
+
+    @GetMapping("/backup/risk-scores")
+    @Operation(summary = "Get Backup Risk Scores", description = "Lấy điểm rủi ro của user đã xóa")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Page<com.utetea.backend.dto.DeletedUserRiskScoreDto>>> getBackupRiskScores(
+            @RequestParam(required = false) Long deletedUserId,
+            @RequestParam(required = false) String deletedUsername,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("GET /api/monitoring/backup/risk-scores - userId: {}, username: {}", deletedUserId, deletedUsername);
+        
+        Pageable pageable = PageRequest.of(page, size);
+        Page<com.utetea.backend.dto.DeletedUserRiskScoreDto> scores = 
+            monitoringService.getBackupRiskScores(deletedUserId, deletedUsername, pageable);
+        
+        return ResponseEntity.ok(ApiResponse.success("Backup risk scores loaded", scores));
+    }
 }

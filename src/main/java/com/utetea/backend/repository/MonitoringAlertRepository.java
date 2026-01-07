@@ -7,6 +7,7 @@ import com.utetea.backend.model.MonitoringAlert.AlertType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -79,4 +80,9 @@ public interface MonitoringAlertRepository extends JpaRepository<MonitoringAlert
         @Param("alertType") AlertType alertType,
         @Param("since") Instant since
     );
+
+    // Set handledBy = null cho các alerts mà user đã xử lý (khi xóa tài khoản)
+    @Modifying
+    @Query("UPDATE MonitoringAlert a SET a.handledBy = null WHERE a.handledBy.id = :userId")
+    void clearHandledByUserId(@Param("userId") Long userId);
 }
