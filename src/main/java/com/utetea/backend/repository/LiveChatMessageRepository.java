@@ -22,4 +22,13 @@ public interface LiveChatMessageRepository extends JpaRepository<LiveChatMessage
     @Query("UPDATE LiveChatMessage m SET m.isRead = true " +
            "WHERE m.conversation.id = :conversationId AND m.senderType = :senderType AND m.isRead = false")
     int markAsRead(@Param("conversationId") Long conversationId, @Param("senderType") com.utetea.backend.model.SenderType senderType);
+
+    // Xóa tất cả tin nhắn của user (khi xóa tài khoản)
+    @Modifying
+    void deleteBySenderId(Long senderId);
+
+    // Xóa tất cả tin nhắn trong các conversation của user
+    @Modifying
+    @Query("DELETE FROM LiveChatMessage m WHERE m.conversation.id IN (SELECT c.id FROM ChatConversation c WHERE c.user.id = :userId)")
+    void deleteByConversationUserId(@Param("userId") Long userId);
 }

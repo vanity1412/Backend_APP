@@ -1,5 +1,6 @@
 package com.utetea.backend.dto;
 
+import com.utetea.backend.model.DeletedUserActivityLogBackup;
 import com.utetea.backend.model.UserActivityLog;
 import com.utetea.backend.model.UserActivityLog.ActivityType;
 import com.utetea.backend.model.UserActivityLog.RiskLevel;
@@ -17,6 +18,9 @@ public class UserActivityLogDto {
     private String userEmail;
     private String userFullName;
     private String userAvatarUrl;
+    
+    // Flag để đánh dấu đây là log của user đã xóa
+    private Boolean isDeletedUser;
     
     private ActivityType activityType;
     private String activityTypeDisplay;
@@ -40,6 +44,7 @@ public class UserActivityLogDto {
         UserActivityLogDto dto = new UserActivityLogDto();
         dto.setId(log.getId());
         dto.setUserId(log.getUserId());
+        dto.setIsDeletedUser(false);
         
         if (log.getUser() != null) {
             dto.setUsername(log.getUser().getUsername());
@@ -124,5 +129,59 @@ public class UserActivityLogDto {
             case SUSPICIOUS -> "Đáng ngờ";
             case CRITICAL -> "Nghiêm trọng";
         };
+    }
+
+    /**
+     * Convert từ backup entity (user đã xóa) sang DTO
+     * Để hiển thị chung với activity logs của user còn tồn tại
+     */
+    public static UserActivityLogDto fromBackupEntity(DeletedUserActivityLogBackup backup) {
+        UserActivityLogDto dto = new UserActivityLogDto();
+        dto.setId(backup.getId());
+        dto.setUserId(backup.getDeletedUserId());
+        dto.setUsername(backup.getDeletedUsername());
+        dto.setUserFullName(backup.getDeletedUsername() + " (đã xóa)");
+        dto.setIsDeletedUser(true);
+        
+        // Parse activity type từ string
+        ActivityType activityType = null;
+        if (backup.getActivityType() != null) {
+            try {
+                activityType = ActivityType.valueOf(backup.getActivityType());
+            } catch (IllegalArgumentException e) {
+                // Ignore invalid enum
+            }
+        }
+        dto.setActivityType(activityType);
+        dto.setActivityTypeDisplay(getActivityTypeDisplay(activityType));
+        dto.setDescription(backup.getDescription());
+        
+        // Parse risk level từ string
+        RiskLevel riskLevel = null;
+        if (backup.getRiskLevel() != null) {
+            try {
+                riskLevel = RiskLevel.valueOf(backup.getRiskLevel());
+            } catch (IllegalArgumentException e) {
+                // Ignore invalid enum
+            }
+        }
+        dto.setRiskLevel(riskLevel);
+        dto.setRiskLevelDisplay(getRiskLevelDisplay(riskLevel));
+        
+        dto.setIpAddress(backup.getIpAddress());
+        dto.setDeviceInfo(backup.getDeviceInfo());
+        dto.setUserAgent(backup.getUserAgent());
+        dto.setEndpoint(backup.getEndpoint());
+        dto.setRequestMethod(backup.getRequestMethod());
+        dto.setResponseStatus(backup.getResponseStatus());
+        
+        dto.setRelatedId(backup.getRelatedId());
+        dto.setExtraData(backup.getExtraData());
+        
+        if (backup.getActivityCreatedAt() != null) {
+            dto.setCreatedAt(backup.getActivityCreatedAt().atZone(ZoneId.systemDefault()).toLocalDateTime());
+        }
+        
+        return dto;
     }
 }

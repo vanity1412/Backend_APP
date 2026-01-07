@@ -35,4 +35,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Modifying
     @Query("DELETE FROM Notification n WHERE n.createdAt < :cutoffDate")
     int deleteOlderThan(@Param("cutoffDate") java.time.Instant cutoffDate);
+
+    // Xóa tất cả thông báo của user (khi xóa tài khoản)
+    @Modifying
+    void deleteByUserId(Long userId);
 }

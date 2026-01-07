@@ -72,4 +72,9 @@ public interface ChatConversationRepository extends JpaRepository<ChatConversati
     // Delete all conversations by user ID
     @Modifying
     void deleteByUserId(Long userId);
+
+    // Set manager = null cho các conversations mà user là manager (khi xóa tài khoản manager)
+    @Modifying
+    @Query("UPDATE ChatConversation c SET c.manager = null WHERE c.manager.id = :managerId")
+    void clearManagerByManagerId(@Param("managerId") Long managerId);
 }

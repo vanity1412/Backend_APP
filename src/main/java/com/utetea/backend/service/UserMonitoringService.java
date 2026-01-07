@@ -37,6 +37,9 @@ public class UserMonitoringService {
     private final UserRepository userRepository;
     private final OneSignalService oneSignalService;
     private final MonitoringWebSocketService monitoringWebSocketService;
+    private final DeletedUserActivityLogBackupRepository deletedActivityLogBackupRepository;
+    private final DeletedUserMonitoringAlertBackupRepository deletedAlertBackupRepository;
+    private final DeletedUserRiskScoreBackupRepository deletedRiskScoreBackupRepository;
 
     // ==================== RISK SCORING RULES ====================
     private static final int SCORE_LOGIN_FAILED = 5;
@@ -280,6 +283,29 @@ public class UserMonitoringService {
         createAlertIfNotExists(userId, AlertType.SECURITY_VIOLATION, AlertSeverity.LOW,
             "User đổi mật khẩu",
             "User đã thay đổi mật khẩu. Nếu không phải user thực hiện, cần kiểm tra.");
+    }
+
+    /**
+     * 🚨 Log xóa tài khoản - CẢNH BÁO NGHIÊM TRỌNG
+     * Tạo alert CRITICAL khi user tự xóa tài khoản
+     */
+    @Transactional
+    public void logAccountDeletion(Long userId, String username, String email, HttpServletRequest request) {
+        // Log activity với mức độ CRITICAL
+        logActivity(userId, ActivityType.SECURITY_VIOLATION, 
+            "🚨 USER TỰ XÓA TÀI KHOẢN - Username: " + username + ", Email: " + email, 
+            RiskLevel.CRITICAL, null, request);
+        
+        // 🚨 Tạo alert CRITICAL
+        String ipAddress = getClientIp(request);
+        createAlert(userId, AlertType.SECURITY_VIOLATION, AlertSeverity.CRITICAL,
+            "🚨 USER TỰ XÓA TÀI KHOẢN",
+            "User " + username + " (Email: " + email + ") đã tự xóa tài khoản. " +
+            "IP: " + ipAddress + ". " +
+            "Dữ liệu đã được backup. Cần kiểm tra nếu đây là hành vi bất thường.",
+            ipAddress);
+        
+        log.warn("🚨 CRITICAL: User {} ({}) deleted their account from IP: {}", username, email, ipAddress);
     }
     
     /**
@@ -742,13 +768,80 @@ public class UserMonitoringService {
         return dashboard;
     }
 
+    /**
+     * Lấy activity logs bao gồm cả backup logs của user đã xóa
+     * Merge và sort theo thời gian giảm dần
+     */
     @Transactional(readOnly = true)
     public Page<UserActivityLogDto> getActivityLogs(Long userId, ActivityType activityType,
                                                      RiskLevel riskLevel, Instant startDate,
                                                      Instant endDate, Pageable pageable) {
-        return activityLogRepository.findByFilters(userId, activityType, riskLevel, 
-            startDate, endDate, pageable)
-            .map(UserActivityLogDto::fromEntity);
+        // Nếu filter theo userId cụ thể, chỉ lấy logs của user đó
+        if (userId != null) {
+            return activityLogRepository.findByFilters(userId, activityType, riskLevel, 
+                startDate, endDate, pageable)
+                .map(UserActivityLogDto::fromEntity);
+        }
+        
+        // Lấy logs từ bảng chính
+        Page<UserActivityLog> mainLogs = activityLogRepository.findByFilters(
+            null, activityType, riskLevel, startDate, endDate, pageable);
+        
+        // Lấy backup logs của user đã xóa
+        List<DeletedUserActivityLogBackup> backupLogs = deletedActivityLogBackupRepository.findAll();
+        
+        // Filter backup logs theo điều kiện
+        List<UserActivityLogDto> filteredBackupDtos = backupLogs.stream()
+            .filter(backup -> {
+                // Filter theo activityType
+                if (activityType != null && !activityType.name().equals(backup.getActivityType())) {
+                    return false;
+                }
+                // Filter theo riskLevel
+                if (riskLevel != null && !riskLevel.name().equals(backup.getRiskLevel())) {
+                    return false;
+                }
+                // Filter theo startDate
+                if (startDate != null && backup.getActivityCreatedAt() != null 
+                    && backup.getActivityCreatedAt().isBefore(startDate)) {
+                    return false;
+                }
+                // Filter theo endDate
+                if (endDate != null && backup.getActivityCreatedAt() != null 
+                    && backup.getActivityCreatedAt().isAfter(endDate)) {
+                    return false;
+                }
+                return true;
+            })
+            .map(UserActivityLogDto::fromBackupEntity)
+            .toList();
+        
+        // Merge và sort
+        List<UserActivityLogDto> allLogs = new java.util.ArrayList<>();
+        allLogs.addAll(mainLogs.getContent().stream()
+            .map(UserActivityLogDto::fromEntity)
+            .toList());
+        allLogs.addAll(filteredBackupDtos);
+        
+        // Sort theo createdAt giảm dần
+        allLogs.sort((a, b) -> {
+            if (a.getCreatedAt() == null && b.getCreatedAt() == null) return 0;
+            if (a.getCreatedAt() == null) return 1;
+            if (b.getCreatedAt() == null) return -1;
+            return b.getCreatedAt().compareTo(a.getCreatedAt());
+        });
+        
+        // Pagination thủ công
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), allLogs.size());
+        
+        if (start >= allLogs.size()) {
+            return new org.springframework.data.domain.PageImpl<>(
+                java.util.Collections.emptyList(), pageable, allLogs.size());
+        }
+        
+        List<UserActivityLogDto> pageContent = allLogs.subList(start, end);
+        return new org.springframework.data.domain.PageImpl<>(pageContent, pageable, allLogs.size());
     }
 
     @Transactional(readOnly = true)
@@ -905,6 +998,100 @@ public class UserMonitoringService {
             }
         } catch (Exception e) {
             log.error("Error updating risk score async for user {}", userId, e);
+        }
+    }
+
+    // ==================== BACKUP DATA (USER ĐÃ XÓA) ====================
+
+    /**
+     * Lấy backup activity logs của user đã xóa
+     */
+    @Transactional(readOnly = true)
+    public Page<com.utetea.backend.dto.DeletedUserActivityLogDto> getBackupActivityLogs(
+            Long deletedUserId, String deletedUsername, Pageable pageable) {
+        
+        if (deletedUserId != null) {
+            List<com.utetea.backend.model.DeletedUserActivityLogBackup> list = 
+                deletedActivityLogBackupRepository.findByDeletedUserId(deletedUserId);
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), list.size());
+            List<com.utetea.backend.dto.DeletedUserActivityLogDto> content = list.subList(start, end).stream()
+                .map(com.utetea.backend.dto.DeletedUserActivityLogDto::fromEntity)
+                .collect(Collectors.toList());
+            return new org.springframework.data.domain.PageImpl<>(content, pageable, list.size());
+        } else if (deletedUsername != null && !deletedUsername.isEmpty()) {
+            List<com.utetea.backend.model.DeletedUserActivityLogBackup> list = 
+                deletedActivityLogBackupRepository.findByDeletedUsername(deletedUsername);
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), list.size());
+            List<com.utetea.backend.dto.DeletedUserActivityLogDto> content = list.subList(start, end).stream()
+                .map(com.utetea.backend.dto.DeletedUserActivityLogDto::fromEntity)
+                .collect(Collectors.toList());
+            return new org.springframework.data.domain.PageImpl<>(content, pageable, list.size());
+        } else {
+            Page<com.utetea.backend.model.DeletedUserActivityLogBackup> backups = 
+                deletedActivityLogBackupRepository.findAll(pageable);
+            return backups.map(com.utetea.backend.dto.DeletedUserActivityLogDto::fromEntity);
+        }
+    }
+
+    /**
+     * Lấy backup monitoring alerts của user đã xóa
+     */
+    @Transactional(readOnly = true)
+    public Page<com.utetea.backend.dto.DeletedUserMonitoringAlertDto> getBackupAlerts(
+            Long deletedUserId, String deletedUsername, Pageable pageable) {
+        
+        if (deletedUserId != null) {
+            List<com.utetea.backend.model.DeletedUserMonitoringAlertBackup> list = 
+                deletedAlertBackupRepository.findByDeletedUserId(deletedUserId);
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), list.size());
+            List<com.utetea.backend.dto.DeletedUserMonitoringAlertDto> content = list.subList(start, end).stream()
+                .map(com.utetea.backend.dto.DeletedUserMonitoringAlertDto::fromEntity)
+                .collect(Collectors.toList());
+            return new org.springframework.data.domain.PageImpl<>(content, pageable, list.size());
+        } else if (deletedUsername != null && !deletedUsername.isEmpty()) {
+            List<com.utetea.backend.model.DeletedUserMonitoringAlertBackup> list = 
+                deletedAlertBackupRepository.findByDeletedUsername(deletedUsername);
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), list.size());
+            List<com.utetea.backend.dto.DeletedUserMonitoringAlertDto> content = list.subList(start, end).stream()
+                .map(com.utetea.backend.dto.DeletedUserMonitoringAlertDto::fromEntity)
+                .collect(Collectors.toList());
+            return new org.springframework.data.domain.PageImpl<>(content, pageable, list.size());
+        } else {
+            Page<com.utetea.backend.model.DeletedUserMonitoringAlertBackup> backups = 
+                deletedAlertBackupRepository.findAll(pageable);
+            return backups.map(com.utetea.backend.dto.DeletedUserMonitoringAlertDto::fromEntity);
+        }
+    }
+
+    /**
+     * Lấy backup risk scores của user đã xóa
+     */
+    @Transactional(readOnly = true)
+    public Page<com.utetea.backend.dto.DeletedUserRiskScoreDto> getBackupRiskScores(
+            Long deletedUserId, String deletedUsername, Pageable pageable) {
+        
+        if (deletedUserId != null) {
+            Optional<com.utetea.backend.model.DeletedUserRiskScoreBackup> opt = 
+                deletedRiskScoreBackupRepository.findByDeletedUserId(deletedUserId);
+            List<com.utetea.backend.dto.DeletedUserRiskScoreDto> content = opt
+                .map(b -> List.of(com.utetea.backend.dto.DeletedUserRiskScoreDto.fromEntity(b)))
+                .orElse(List.of());
+            return new org.springframework.data.domain.PageImpl<>(content, pageable, content.size());
+        } else if (deletedUsername != null && !deletedUsername.isEmpty()) {
+            Optional<com.utetea.backend.model.DeletedUserRiskScoreBackup> opt = 
+                deletedRiskScoreBackupRepository.findByDeletedUsername(deletedUsername);
+            List<com.utetea.backend.dto.DeletedUserRiskScoreDto> content = opt
+                .map(b -> List.of(com.utetea.backend.dto.DeletedUserRiskScoreDto.fromEntity(b)))
+                .orElse(List.of());
+            return new org.springframework.data.domain.PageImpl<>(content, pageable, content.size());
+        } else {
+            Page<com.utetea.backend.model.DeletedUserRiskScoreBackup> backups = 
+                deletedRiskScoreBackupRepository.findAll(pageable);
+            return backups.map(com.utetea.backend.dto.DeletedUserRiskScoreDto::fromEntity);
         }
     }
 }
