@@ -11,6 +11,12 @@ RUN mvn clean package -DskipTests -q
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
+# Set timezone to Vietnam (Ho Chi Minh)
+ENV TZ=Asia/Ho_Chi_Minh
+RUN apk add --no-cache tzdata && \
+    cp /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime && \
+    echo "Asia/Ho_Chi_Minh" > /etc/timezone
+
 # Add non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
@@ -35,4 +41,5 @@ ENTRYPOINT ["java", \
     "-XX:+UseG1GC", \
     "-XX:MaxGCPauseMillis=100", \
     "-Djava.security.egd=file:/dev/./urandom", \
+    "-Duser.timezone=Asia/Ho_Chi_Minh", \
     "-jar", "app.jar"]
