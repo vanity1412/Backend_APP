@@ -25,7 +25,8 @@ public class GroupOrderDto {
     private OrderType orderType;
     private String deliveryAddress;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    // Sử dụng timezone Asia/Ho_Chi_Minh (UTC+7) để đồng bộ với client
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "Asia/Ho_Chi_Minh")
     private LocalDateTime expiresAt;
     private Integer maxMembers;
     private Integer currentMemberCount;
@@ -36,9 +37,9 @@ public class GroupOrderDto {
     private List<GroupOrderMemberDto> members;
     private List<GroupOrderItemDto> items;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "Asia/Ho_Chi_Minh")
     private LocalDateTime createdAt;
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "Asia/Ho_Chi_Minh")
     private LocalDateTime updatedAt;
     
     /**
