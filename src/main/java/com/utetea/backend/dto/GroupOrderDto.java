@@ -25,9 +25,15 @@ public class GroupOrderDto {
     private OrderType orderType;
     private String deliveryAddress;
     
-    // Sử dụng timezone Asia/Ho_Chi_Minh (UTC+7) để đồng bộ với client
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "Asia/Ho_Chi_Minh")
     private LocalDateTime expiresAt;
+    
+    /**
+     * Số giây còn lại trước khi hết hạn (tính từ server)
+     * Client dùng trực tiếp để hiển thị countdown
+     */
+    private Long remainingSeconds;
+    
     private Integer maxMembers;
     private Integer currentMemberCount;
     

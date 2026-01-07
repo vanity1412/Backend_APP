@@ -669,6 +669,14 @@ public class GroupOrderService {
     }
     
     private GroupOrderDto mapToDtoWithItems(GroupOrder groupOrder, List<GroupOrderItem> fetchedItems) {
+        // Tính số giây còn lại trước khi hết hạn
+        Long remainingSeconds = null;
+        if (groupOrder.getExpiresAt() != null) {
+            long seconds = java.time.temporal.ChronoUnit.SECONDS.between(
+                LocalDateTime.now(), groupOrder.getExpiresAt());
+            remainingSeconds = Math.max(0, seconds); // Không âm
+        }
+        
         GroupOrderDto dto = GroupOrderDto.builder()
             .id(groupOrder.getId())
             .inviteCode(groupOrder.getInviteCode())
@@ -679,6 +687,7 @@ public class GroupOrderService {
             .orderType(groupOrder.getOrderType())
             .deliveryAddress(groupOrder.getDeliveryAddress())
             .expiresAt(groupOrder.getExpiresAt())
+            .remainingSeconds(remainingSeconds)
             .maxMembers(groupOrder.getMaxMembers())
             .createdAt(groupOrder.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime())
             .updatedAt(groupOrder.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime())

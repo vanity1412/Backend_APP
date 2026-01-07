@@ -23,20 +23,32 @@ public class WhitelistedIPService {
     private final WhitelistedIPRepository whitelistedIPRepository;
 
     /**
-     * Khởi tạo whitelist mặc định (127.0.0.1)
+     * Khởi tạo whitelist mặc định
      */
     @PostConstruct
     @Transactional
     public void initDefaultWhitelist() {
-        // Thêm localhost vào whitelist nếu chưa có
-        if (!whitelistedIPRepository.existsByIpAddress("127.0.0.1")) {
-            WhitelistedIP localhost = WhitelistedIP.builder()
-                    .ipAddress("127.0.0.1")
-                    .description("Localhost - Development")
-                    .isActive(true)
-                    .build();
-            whitelistedIPRepository.save(localhost);
-            log.info("✅ Added default whitelist IP: 127.0.0.1");
+        // Danh sách IP mặc định cần whitelist
+        String[][] defaultIPs = {
+            {"127.0.0.1", "Localhost - Development"},
+            {"15.235.187.69", "Singapore Server"},
+            {"14.225.252.200", "HCM Server"},
+            {"45.12.134.231", "Japan Server"}
+        };
+        
+        for (String[] ipInfo : defaultIPs) {
+            String ip = ipInfo[0];
+            String description = ipInfo[1];
+            
+            if (!whitelistedIPRepository.existsByIpAddress(ip)) {
+                WhitelistedIP whitelistedIP = WhitelistedIP.builder()
+                        .ipAddress(ip)
+                        .description(description)
+                        .isActive(true)
+                        .build();
+                whitelistedIPRepository.save(whitelistedIP);
+                log.info("✅ Added default whitelist IP: {} ({})", ip, description);
+            }
         }
     }
 
