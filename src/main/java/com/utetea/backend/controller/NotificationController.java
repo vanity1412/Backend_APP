@@ -2,13 +2,16 @@ package com.utetea.backend.controller;
 
 import com.utetea.backend.dto.ApiResponse;
 import com.utetea.backend.dto.NotificationDto;
+import com.utetea.backend.dto.NotificationRequestDto;
 import com.utetea.backend.model.Notification;
 import com.utetea.backend.model.User;
 import com.utetea.backend.repository.NotificationRepository;
 import com.utetea.backend.repository.UserRepository;
+import com.utetea.backend.service.OneSignalService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,6 +28,7 @@ public class NotificationController {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final OneSignalService oneSignalService;
 
     /**
      * Lấy danh sách thông báo của user hiện tại
@@ -180,5 +184,57 @@ public class NotificationController {
         }
         
         return dto;
+    }
+
+    /**
+     * Gửi thông báo tùy chỉnh (CHỈ MANAGER/ADMIN)
+     * POST /api/notifications/send
+     */
+    @PostMapping("/send")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<String>> sendCustomNotification(
+            @RequestBody NotificationRequestDto request,
+            Authentication authentication) {
+        try {
+            String senderUsername = authentication.getName();
+            User sender = userRepository.findByUsername(senderUsername)
+                    .orElseThrow(() -> new RuntimeException("Sender not found"));
+
+            log.info("Manager/Admin {} sending notification: sendAll={}, userIds={}", 
+                    senderUsername, request.getSendAll(), request.getUserIds());
+
+            // Validate input
+            if (request.getTitle() == null || request.getTitle().trim().isEmpty()) {
+                return ResponseEntity.ok(ApiResponse.error("Tiêu đề không được để trống"));
+            }
+            if (request.getContent() == null || request.getContent().trim().isEmpty()) {
+                return ResponseEntity.ok(ApiResponse.error("Nội dung không được để trống"));
+            }
+
+            if (request.getSendAll() != null && request.getSendAll()) {
+                // Gửi cho tất cả user
+                oneSignalService.sendToAll(request.getTitle(), request.getContent());
+                log.info("Sent notification to all users");
+                return ResponseEntity.ok(ApiResponse.success("Đã gửi thông báo cho tất cả người dùng"));
+                
+            } else {
+                // Gửi cho user cụ thể
+                if (request.getUserIds() == null || request.getUserIds().isEmpty()) {
+                    return ResponseEntity.ok(ApiResponse.error("Vui lòng chọn ít nhất một người dùng"));
+                }
+
+                // Convert String IDs to array
+                String[] userIds = request.getUserIds().toArray(new String[0]);
+                oneSignalService.sendToMultipleUsers(userIds, request.getTitle(), request.getContent(),
+                        com.utetea.backend.model.NotificationType.CUSTOM, null);
+                
+                log.info("Sent notification to {} specific users", userIds.length);
+                return ResponseEntity.ok(ApiResponse.success("Đã gửi thông báo cho " + userIds.length + " người dùng"));
+            }
+
+        } catch (Exception e) {
+            log.error("Error sending custom notification", e);
+            return ResponseEntity.ok(ApiResponse.error("Lỗi gửi thông báo: " + e.getMessage()));
+        }
     }
 }

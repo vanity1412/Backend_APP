@@ -5,8 +5,8 @@ import com.utetea.backend.model.NotificationType;
 import com.utetea.backend.model.User;
 import com.utetea.backend.repository.NotificationRepository;
 import com.utetea.backend.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,15 +18,23 @@ import java.util.Optional;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class OneSignalService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
 
-    private static final String REST_API_KEY = "os_v2_app_4r5fs33yt5cxhmtqntiq6vl72otperklfqzu6znmtwjnihlfpmus44fdlftut3jzboc3oy7n3yjisfgt4afi2ll4rb2v5k42gofpp2a";
-    private static final String APP_ID = "e47a596f-789f-4573-b270-6cd10f557fd3";
+    @Value("${onesignal.rest.api.key}")
+    private String restApiKey;
+
+    @Value("${onesignal.app.id}")
+    private String appId;
+
     private static final String ONESIGNAL_API_URL = "https://onesignal.com/api/v1/notifications";
+
+    public OneSignalService(NotificationRepository notificationRepository, UserRepository userRepository) {
+        this.notificationRepository = notificationRepository;
+        this.userRepository = userRepository;
+    }
 
     // Hàm gửi request cơ bản
     private void sendRequest(String jsonBody) {
@@ -41,7 +49,7 @@ public class OneSignalService {
 
             con.setRequestMethod("POST");
             con.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-            con.setRequestProperty("Authorization", "Basic " + REST_API_KEY);
+            con.setRequestProperty("Authorization", "Basic " + restApiKey);
 
             byte[] sendBytes = jsonBody.getBytes(StandardCharsets.UTF_8);
             con.setFixedLengthStreamingMode(sendBytes.length);
@@ -86,7 +94,7 @@ public class OneSignalService {
     @Transactional
     public void sendToAll(String title, String content, NotificationType type, Long relatedId) {
         String jsonBody = "{"
-                + "\"app_id\": \"" + APP_ID + "\","
+                + "\"app_id\": \"" + appId + "\","
                 + "\"included_segments\": [\"All\"],"
                 + "\"headings\": {\"en\": \"" + title + "\"},"
                 + "\"contents\": {\"en\": \"" + content + "\"}"
@@ -112,7 +120,7 @@ public class OneSignalService {
     @Transactional
     public void sendToUser(String userId, String title, String content, NotificationType type, Long relatedId) {
         String jsonBody = "{"
-                + "\"app_id\": \"" + APP_ID + "\","
+                + "\"app_id\": \"" + appId + "\","
                 + "\"include_aliases\": {\"external_id\": [\"" + userId + "\"]},"
                 + "\"target_channel\": \"push\","
                 + "\"headings\": {\"en\": \"" + title + "\"},"
@@ -146,7 +154,7 @@ public class OneSignalService {
         idsJson.append("]");
 
         String jsonBody = "{"
-                + "\"app_id\": \"" + APP_ID + "\","
+                + "\"app_id\": \"" + appId + "\","
                 + "\"include_aliases\": {\"external_id\": " + idsJson.toString() + "},"
                 + "\"target_channel\": \"push\","
                 + "\"headings\": {\"en\": \"" + title + "\"},"
