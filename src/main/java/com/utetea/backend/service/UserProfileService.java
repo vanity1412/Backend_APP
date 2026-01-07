@@ -160,6 +160,15 @@ public class UserProfileService {
         log.info("Deleting account for user: {} (ID: {})", username, userId);
 
         try {
+            // 🚨 BƯỚC 0: Tạo cảnh báo NGHIÊM TRỌNG khi user xóa tài khoản
+            log.info("Creating CRITICAL alert for account deletion: user {}", userId);
+            try {
+                userMonitoringService.logAccountDeletion(userId, user.getUsername(), user.getEmail(), 
+                    RequestContextUtil.getCurrentRequest());
+            } catch (Exception e) {
+                log.error("Failed to create account deletion alert", e);
+            }
+            
             // BƯỚC 1: Backup orders trước khi xóa (để manager vẫn quản lý được doanh thu)
             // Chỉ backup các order DONE để tính doanh thu
             log.info("Backing up DONE orders for user {}", userId);

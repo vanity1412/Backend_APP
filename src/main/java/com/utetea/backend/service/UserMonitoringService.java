@@ -284,6 +284,29 @@ public class UserMonitoringService {
             "User đổi mật khẩu",
             "User đã thay đổi mật khẩu. Nếu không phải user thực hiện, cần kiểm tra.");
     }
+
+    /**
+     * 🚨 Log xóa tài khoản - CẢNH BÁO NGHIÊM TRỌNG
+     * Tạo alert CRITICAL khi user tự xóa tài khoản
+     */
+    @Transactional
+    public void logAccountDeletion(Long userId, String username, String email, HttpServletRequest request) {
+        // Log activity với mức độ CRITICAL
+        logActivity(userId, ActivityType.SECURITY_VIOLATION, 
+            "🚨 USER TỰ XÓA TÀI KHOẢN - Username: " + username + ", Email: " + email, 
+            RiskLevel.CRITICAL, null, request);
+        
+        // 🚨 Tạo alert CRITICAL
+        String ipAddress = getClientIp(request);
+        createAlert(userId, AlertType.SECURITY_VIOLATION, AlertSeverity.CRITICAL,
+            "🚨 USER TỰ XÓA TÀI KHOẢN",
+            "User " + username + " (Email: " + email + ") đã tự xóa tài khoản. " +
+            "IP: " + ipAddress + ". " +
+            "Dữ liệu đã được backup. Cần kiểm tra nếu đây là hành vi bất thường.",
+            ipAddress);
+        
+        log.warn("🚨 CRITICAL: User {} ({}) deleted their account from IP: {}", username, email, ipAddress);
+    }
     
     /**
      * 🌐 Log đăng nhập từ IP/thiết bị mới
