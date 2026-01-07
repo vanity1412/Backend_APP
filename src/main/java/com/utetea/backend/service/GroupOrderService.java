@@ -670,11 +670,18 @@ public class GroupOrderService {
     
     private GroupOrderDto mapToDtoWithItems(GroupOrder groupOrder, List<GroupOrderItem> fetchedItems) {
         // Tính số giây còn lại trước khi hết hạn
+        // Dùng LocalDateTime.now() (system default timezone) vì expiresAt cũng được lưu theo system timezone
         Long remainingSeconds = null;
-        if (groupOrder.getExpiresAt() != null) {
-            long seconds = java.time.temporal.ChronoUnit.SECONDS.between(
-                LocalDateTime.now(), groupOrder.getExpiresAt());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiresAt = groupOrder.getExpiresAt();
+        
+        if (expiresAt != null) {
+            long seconds = java.time.temporal.ChronoUnit.SECONDS.between(now, expiresAt);
             remainingSeconds = Math.max(0, seconds); // Không âm
+            
+            // Debug log
+            log.debug("⏰ Group Order {} - Now: {}, ExpiresAt: {}, RemainingSeconds: {}", 
+                groupOrder.getId(), now, expiresAt, remainingSeconds);
         }
         
         GroupOrderDto dto = GroupOrderDto.builder()
