@@ -128,4 +128,40 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     // Delete all orders by user ID
     @Modifying
     void deleteByUserId(Long userId);
+    
+    // ==================== SORTED BY STATUS PRIORITY (PENDING -> MAKING -> SHIPPING -> READY -> DONE) ====================
+    // Sắp xếp theo thứ tự trạng thái ưu tiên, trong mỗi trạng thái sắp xếp từ cũ đến mới (ASC)
+    
+    @Query("SELECT o FROM Order o ORDER BY " +
+           "CASE o.status " +
+           "WHEN com.utetea.backend.model.OrderStatus.PENDING THEN 1 " +
+           "WHEN com.utetea.backend.model.OrderStatus.MAKING THEN 2 " +
+           "WHEN com.utetea.backend.model.OrderStatus.SHIPPING THEN 3 " +
+           "WHEN com.utetea.backend.model.OrderStatus.READY THEN 4 " +
+           "WHEN com.utetea.backend.model.OrderStatus.DONE THEN 5 " +
+           "WHEN com.utetea.backend.model.OrderStatus.CANCELED THEN 6 " +
+           "ELSE 7 END ASC, " +
+           "o.createdAt ASC")
+    Page<Order> findAllOrderByStatusPriorityAndCreatedAtAsc(Pageable pageable);
+    
+    @Query("SELECT o FROM Order o WHERE o.status = :status ORDER BY o.createdAt ASC")
+    Page<Order> findByStatusOrderByCreatedAtAsc(@Param("status") OrderStatus status, Pageable pageable);
+    
+    @Query("SELECT o FROM Order o WHERE o.store.id IN :storeIds ORDER BY " +
+           "CASE o.status " +
+           "WHEN com.utetea.backend.model.OrderStatus.PENDING THEN 1 " +
+           "WHEN com.utetea.backend.model.OrderStatus.MAKING THEN 2 " +
+           "WHEN com.utetea.backend.model.OrderStatus.SHIPPING THEN 3 " +
+           "WHEN com.utetea.backend.model.OrderStatus.READY THEN 4 " +
+           "WHEN com.utetea.backend.model.OrderStatus.DONE THEN 5 " +
+           "WHEN com.utetea.backend.model.OrderStatus.CANCELED THEN 6 " +
+           "ELSE 7 END ASC, " +
+           "o.createdAt ASC")
+    Page<Order> findByStoreIdInOrderByStatusPriorityAndCreatedAtAsc(@Param("storeIds") List<Long> storeIds, Pageable pageable);
+    
+    @Query("SELECT o FROM Order o WHERE o.store.id IN :storeIds AND o.status = :status ORDER BY o.createdAt ASC")
+    Page<Order> findByStoreIdInAndStatusOrderByCreatedAtAsc(
+        @Param("storeIds") List<Long> storeIds, 
+        @Param("status") OrderStatus status, 
+        Pageable pageable);
 }
